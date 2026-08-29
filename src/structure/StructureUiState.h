@@ -20,11 +20,19 @@ namespace lholo::structure::detail {
 struct MaterialRequirement {
     std::string   displayName;
     std::string   typeName;
+    // Resolved inventory item type. Empty for materials without a directly
+    // countable inventory form (for example projected water/lava cells).
+    std::string   itemId;
     std::uint64_t count{};
     // Max stack size of the item this block resolves to (64 normally, 16 for
     // signs etc., 1 for filled buckets). Used for the JE-style "N (a x S + b)"
     // count display. Computed on the tick thread; 64 when unknown.
     int           stackSize{64};
+};
+
+struct ActionHintSnapshot {
+    std::string   text;
+    std::uint64_t expiry{};
 };
 
 // Requirements plus the matching held-item counts, copied together under one
@@ -129,6 +137,18 @@ public:
     void requestSettingsSave();
     [[nodiscard]] PendingHotkeyActions consumePendingHotkeyActions();
 
+    [[nodiscard]] bool experimentalConsentGiven() const;
+    void setExperimentalConsentGiven(bool given);
+    [[nodiscard]] bool materialHudEnabled() const;
+    void setMaterialHudEnabled(bool enabled);
+    [[nodiscard]] int materialHudPosition() const;
+    void setMaterialHudPosition(int position);
+    void requestExperimentalConsentPopup(int feature);
+    [[nodiscard]] int consumeExperimentalConsentPopupRequest();
+    void setActionHint(std::string text, std::uint64_t expiry);
+    [[nodiscard]] std::uint64_t actionHintExpiry() const;
+    [[nodiscard]] ActionHintSnapshot actionHint() const;
+
     void requestMaterialList();
     [[nodiscard]] bool consumeMaterialListRequest();
     void replaceMaterialRequirements(std::vector<MaterialRequirement> materials);
@@ -185,6 +205,14 @@ private:
     std::atomic_bool     mPendingCloseProjection{false};
     std::atomic_bool     mPendingSettingsSave{false};
     std::atomic_uint64_t mIgnoreHotkeyUntil{0};
+
+    std::atomic_bool mExperimentalConsent{false};
+    std::atomic_bool mMaterialHudEnabled{false};
+    std::atomic_int  mMaterialHudPosition{1};
+    std::atomic_int  mPendingConsentPopupFeature{0};
+    mutable std::mutex mActionHintMutex;
+    std::string        mActionHintText;
+    std::atomic_uint64_t mActionHintExpiry{};
 
     mutable std::mutex                mMaterialMutex;
     std::atomic_bool                  mMaterialListRequested{false};

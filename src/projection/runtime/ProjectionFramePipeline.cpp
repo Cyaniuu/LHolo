@@ -83,6 +83,7 @@ void ensureExtraBlockMesh(
 ) {
     if (!ProjectionSession::getInstance().extraBlocksEnabled() || !state.structure) {
         state.extraBlockMesh.reset();
+        state.extraBlockScanAt = 0;
         return;
     }
     auto const now = static_cast<std::uint64_t>(
@@ -91,7 +92,10 @@ void ensureExtraBlockMesh(
         ).count()
     );
     constexpr std::uint64_t kScanIntervalMs = 200;
-    if (state.extraBlockMesh && now - state.extraBlockScanAt < kScanIntervalMs) return;
+    // Throttle independently of whether the previous scan produced a mesh.
+    // Empty areas are the common case and must not fall back to a full scan on
+    // every render frame.
+    if (state.extraBlockScanAt != 0 && now - state.extraBlockScanAt < kScanIntervalMs) return;
     state.extraBlockScanAt = now;
 
     // Structure world box: renderOrigin + transformed size (rotation swaps X/Z).

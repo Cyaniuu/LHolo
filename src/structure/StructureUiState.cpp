@@ -7,6 +7,7 @@
 
 #include <Windows.h>
 
+#include <algorithm>
 #include <utility>
 
 namespace lholo::structure::detail {
@@ -19,30 +20,34 @@ bool updateRelaxed(std::atomic<T>& target, T value) {
     return true;
 }
 
+struct DefaultHotkey {
+    unsigned int key;
+    unsigned int modifiers;
+};
+
+constexpr std::array<DefaultHotkey, StructureUiState::kHotkeyCount> kDefaultHotkeys{{
+    {'M',     lholo::ui::kHotkeyModifierAlt},
+    {VK_LEFT, lholo::ui::kHotkeyModifierControl},
+    {VK_RIGHT,lholo::ui::kHotkeyModifierControl},
+    {VK_UP,   lholo::ui::kHotkeyModifierControl},
+    {VK_DOWN, lholo::ui::kHotkeyModifierControl},
+    {VK_UP,   lholo::ui::kHotkeyModifierShift},
+    {VK_DOWN, lholo::ui::kHotkeyModifierShift},
+    {VK_UP,   lholo::ui::kHotkeyModifierAlt},
+    {VK_DOWN, lholo::ui::kHotkeyModifierAlt},
+    {'R',     0},
+    {'F',     0},
+    {0,       0},
+    {0,       0},
+    {'Y',     0},
+}};
+
 } // namespace
 
 StructureUiState::StructureUiState() {
-    static constexpr unsigned int keys[kHotkeyCount]{
-        'M', VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN, VK_UP, VK_DOWN, VK_UP, VK_DOWN, 'R', 'F', 0, 0
-    };
-    static constexpr unsigned int modifiers[kHotkeyCount]{
-        lholo::ui::kHotkeyModifierAlt,
-        lholo::ui::kHotkeyModifierControl,
-        lholo::ui::kHotkeyModifierControl,
-        lholo::ui::kHotkeyModifierControl,
-        lholo::ui::kHotkeyModifierControl,
-        lholo::ui::kHotkeyModifierShift,
-        lholo::ui::kHotkeyModifierShift,
-        lholo::ui::kHotkeyModifierAlt,
-        lholo::ui::kHotkeyModifierAlt,
-        0,
-        0,
-        0,
-        0
-    };
     for (std::size_t index = 0; index < kHotkeyCount; ++index) {
-        mHotkeys[index].key.store(keys[index], std::memory_order_relaxed);
-        mHotkeys[index].modifiers.store(modifiers[index], std::memory_order_relaxed);
+        mHotkeys[index].key.store(kDefaultHotkeys[index].key, std::memory_order_relaxed);
+        mHotkeys[index].modifiers.store(kDefaultHotkeys[index].modifiers, std::memory_order_relaxed);
     }
 }
 
@@ -212,27 +217,9 @@ void StructureUiState::bindCapturedHotkey(
 }
 
 void StructureUiState::resetHotkeys() {
-    static constexpr unsigned int keys[kHotkeyCount]{
-        'M', VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN, VK_UP, VK_DOWN, VK_UP, VK_DOWN, 'R', 'F', 0, 0
-    };
-    static constexpr unsigned int modifiers[kHotkeyCount]{
-        lholo::ui::kHotkeyModifierAlt,
-        lholo::ui::kHotkeyModifierControl,
-        lholo::ui::kHotkeyModifierControl,
-        lholo::ui::kHotkeyModifierControl,
-        lholo::ui::kHotkeyModifierControl,
-        lholo::ui::kHotkeyModifierShift,
-        lholo::ui::kHotkeyModifierShift,
-        lholo::ui::kHotkeyModifierAlt,
-        lholo::ui::kHotkeyModifierAlt,
-        0,
-        0,
-        0,
-        0
-    };
     for (std::size_t index = 0; index < mHotkeys.size(); ++index) {
-        mHotkeys[index].key.store(keys[index], std::memory_order_relaxed);
-        mHotkeys[index].modifiers.store(modifiers[index], std::memory_order_relaxed);
+        mHotkeys[index].key.store(kDefaultHotkeys[index].key, std::memory_order_relaxed);
+        mHotkeys[index].modifiers.store(kDefaultHotkeys[index].modifiers, std::memory_order_relaxed);
     }
     stopHotkeyCapture();
 }
@@ -344,6 +331,56 @@ PendingHotkeyActions StructureUiState::consumePendingHotkeyActions() {
         mPendingLoadProjection.exchange(false, std::memory_order_acq_rel),
         mPendingCloseProjection.exchange(false, std::memory_order_acq_rel)
     };
+}
+
+bool StructureUiState::experimentalConsentGiven() const {
+    return mExperimentalConsent.load(std::memory_order_acquire);
+}
+
+void StructureUiState::setExperimentalConsentGiven(bool given) {
+    mExperimentalConsent.store(given, std::memory_order_release);
+}
+
+bool StructureUiState::materialHudEnabled() const {
+    return mMaterialHudEnabled.load(std::memory_order_acquire);
+}
+
+void StructureUiState::setMaterialHudEnabled(bool enabled) {
+    mMaterialHudEnabled.store(enabled, std::memory_order_release);
+}
+
+int StructureUiState::materialHudPosition() const {
+    return mMaterialHudPosition.load(std::memory_order_acquire);
+}
+
+void StructureUiState::setMaterialHudPosition(int position) {
+    mMaterialHudPosition.store(std::clamp(position, 0, 3), std::memory_order_release);
+}
+
+void StructureUiState::requestExperimentalConsentPopup(int feature) {
+    mPendingConsentPopupFeature.store(feature, std::memory_order_release);
+}
+
+int StructureUiState::consumeExperimentalConsentPopupRequest() {
+    return mPendingConsentPopupFeature.exchange(0, std::memory_order_acq_rel);
+}
+
+void StructureUiState::setActionHint(std::string text, std::uint64_t expiry) {
+    {
+        std::lock_guard lock(mActionHintMutex);
+        mActionHintText = std::move(text);
+    }
+    mActionHintExpiry.store(expiry, std::memory_order_release);
+}
+
+std::uint64_t StructureUiState::actionHintExpiry() const {
+    return mActionHintExpiry.load(std::memory_order_acquire);
+}
+
+ActionHintSnapshot StructureUiState::actionHint() const {
+    auto const expiry = mActionHintExpiry.load(std::memory_order_acquire);
+    std::lock_guard lock(mActionHintMutex);
+    return {mActionHintText, expiry};
 }
 
 void StructureUiState::requestMaterialList() {

@@ -269,9 +269,12 @@ void renderProjection(
         }
         auto const warningMeshes = countValid(state.warningFillSectionMeshes);
         auto const outlineMeshes = countValid(state.correctionOutlineSectionMeshes);
+        auto const wrongFillMeshes = countValid(state.wrongFillSectionMeshes);
+        auto const wrongOutlineMeshes = countValid(state.wrongOutlineSectionMeshes);
         auto const liquidMeshes = countValid(state.liquidProxySectionMeshes);
         auto const placeholderMeshes = countValid(state.blockEntityPlaceholderSectionMeshes);
-        if (normalMeshes + warningMeshes + outlineMeshes + liquidMeshes + placeholderMeshes != 0) {
+        if (normalMeshes + warningMeshes + outlineMeshes + wrongFillMeshes
+            + wrongOutlineMeshes + liquidMeshes + placeholderMeshes != 0) {
             state.meshPreflightDone = true;
         }
     }

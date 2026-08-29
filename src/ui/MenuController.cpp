@@ -8,6 +8,7 @@
 #include "projection/Projection.h"
 #include "structure/StructurePaths.h"
 #include "structure/StructureLoader.h"
+#include "structure/MaterialTracker.h"
 #include "structure/StructureSession.h"
 #include "structure/StructureUiState.h"
 #include "structure/capture/StructureCapture.h"
@@ -65,6 +66,11 @@ constexpr std::array<HotkeyDefinition, 14> kHotkeyDefinitions{{
     {HotkeyId::LoadProjection, "加载投影"},
     {HotkeyId::CloseProjection, "关闭投影"}
 }};
+static_assert(kHotkeyDefinitions.size() == structure::detail::StructureUiState::kHotkeyCount);
+static_assert(
+    static_cast<std::size_t>(HotkeyId::ToggleRange) + 1
+    == structure::detail::StructureUiState::kHotkeyCount
+);
 
 } // namespace
 
@@ -295,6 +301,7 @@ MenuActions buildStructureMenuActions(bool& refreshModel) {
         // restore request from an earlier failed/pending activation move it.
         projection::cancelNextStructureAnchorRequest();
         session.replaceLoaded(std::move(loaded), pathText, status);
+        structure::detail::invalidateMaterialList();
         structure::saveSettings();
         refreshModel = true;
         logger().info("{}", status);

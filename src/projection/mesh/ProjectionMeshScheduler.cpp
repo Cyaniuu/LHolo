@@ -275,6 +275,8 @@ void scheduleProjectionMeshBuild(
                 result.success = result.success
                     && validateMeshData(result.warningFillMesh, "warningFill", result)
                     && validateMeshData(result.correctionOutlineMesh, "correctionOutline", result)
+                    && validateMeshData(result.wrongFillMesh, "wrongFill", result)
+                    && validateMeshData(result.wrongOutlineMesh, "wrongOutline", result)
                     && validateMeshData(result.liquidProxyMesh, "liquidProxy", result)
                     && validateMeshData(
                         result.blockEntityPlaceholderMesh, "blockEntityPlaceholder", result

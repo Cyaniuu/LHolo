@@ -18,10 +18,10 @@
 
 #include "place/PlacementState.h"
 
+#include "block/BlockPlacementRules.h"
 #include "plugin/LHolo.h"
 #include "projection/Projection.h"
 #include "structure/StructureLoader.h"
-#include "structure/StructureUiState.h"
 
 #include "ll/api/mod/NativeMod.h"
 #include "ll/api/service/Bedrock.h"
@@ -45,16 +45,12 @@
 #include "mc/world/inventory/transaction/ItemUseInventoryTransaction.h"
 #include "mc/world/item/ItemInstance.h"
 #include "mc/world/item/ItemStack.h"
-#include "mc/world/item/registry/ItemRegistry.h"
-#include "mc/world/item/registry/ItemRegistryManager.h"
 #include "mc/world/level/BlockPos.h"
 #include "mc/world/level/BlockSource.h"
 #include "mc/world/level/Tick.h"
 #include "mc/world/level/block/Block.h"
 #include "mc/world/level/block/BlockType.h"
 #include "mc/world/level/block/SlabBlock.h"
-#include "mc/world/level/block/registry/BlockTypeRegistry.h"
-#include "mc/deps/core/string/HashedString.h"
 #include "mc/deps/nbt/ByteTag.h"
 #include "mc/deps/nbt/CompoundTag.h"
 #include "mc/deps/nbt/IntTag.h"
@@ -157,51 +153,6 @@ struct ItemFind {
     ItemStack const* item;
 };
 
-// Some blocks exist in the world only as a redstone/heat/light-driven runtime
-// state the player can never place directly: a lit redstone lamp/ore, a burning
-// furnace, a powered-off redstone torch, a powered repeater/comparator. Map such
-// a name to the base block that actually gets placed so the inventory lookup, the
-// placement prediction and the correction display all line up. The game restores
-// the lit/powered/heat bit on its own once the block is powered or fuelled.
-std::string_view basePlacedName(std::string_view name) {
-    if (name == "minecraft:lit_redstone_lamp")          return "minecraft:redstone_lamp";
-    if (name == "minecraft:lit_redstone_ore")           return "minecraft:redstone_ore";
-    if (name == "minecraft:lit_deepslate_redstone_ore") return "minecraft:deepslate_redstone_ore";
-    if (name == "minecraft:lit_furnace")                return "minecraft:furnace";
-    if (name == "minecraft:lit_blast_furnace")          return "minecraft:blast_furnace";
-    if (name == "minecraft:lit_smoker")                 return "minecraft:smoker";
-    if (name == "minecraft:unlit_redstone_torch")       return "minecraft:redstone_torch";
-    if (name == "minecraft:powered_repeater")           return "minecraft:unpowered_repeater";
-    if (name == "minecraft:powered_comparator")         return "minecraft:unpowered_comparator";
-    return name;
-}
-
-// Blocks whose placing item has a different name than the block. ItemStack(Block)
-// does not resolve these to the right inventory item (the item was never found),
-// so the item is built from its real name instead.
-char const* placingItemName(std::string const& blockName) {
-    if (blockName == "minecraft:redstone_wire") return "minecraft:redstone";
-    if (blockName == "minecraft:unpowered_comparator" || blockName == "minecraft:powered_comparator")
-        return "minecraft:comparator";
-    if (blockName == "minecraft:unpowered_repeater" || blockName == "minecraft:powered_repeater")
-        return "minecraft:repeater";
-    if (blockName == "minecraft:unlit_redstone_torch") return "minecraft:redstone_torch";
-    return nullptr;
-}
-
-ItemStack makePlacingItem(Block const& block) {
-    // Normalize a runtime lit/heat variant to its base block first, then apply
-    // the block->item name remaps (redstone wire/comparator/repeater).
-    std::string const blockName{basePlacedName(block.getTypeName())};
-    char const* const itemName = placingItemName(blockName);
-    // Construct the inventory form by item name with neutral aux. Constructing
-    // ItemStack directly from an oriented Block copies legacy placement bits
-    // (stairs direction/half, pillar axis, ...), but inventory items do not
-    // carry those world-state bits and therefore never matched.
-    std::string_view const name = itemName ? std::string_view{itemName} : std::string_view{blockName};
-    return ItemStack(name, 1, 0, nullptr);
-}
-
 PlacementContext makePlacementContext(Vec3 const& eye, Vec3 const& view, float reach) {
     auto const quantize = [](float value, float scale) {
         return static_cast<int>(std::lround(value * scale));
@@ -250,7 +201,7 @@ void cacheFailedPlan(FailedPlanKey const& key, std::uint64_t now) {
 // redstone item carries no placement state, so the stricter
 // sameItemAndAuxAndBlockData never matched a ghost that does.
 ItemFind findItemSlot(Player& player, Block const& block) {
-    ItemStack const want = makePlacingItem(block);
+    ItemStack const want = block::makePlacementItem(block);
     auto& inventory = player.getInventory();
     for (int slot = 0; slot < kInventorySlots; ++slot) {
         auto const& item = inventory.getItem(slot);
@@ -276,7 +227,7 @@ InventorySnapshot snapshotInventory(Player& player) {
 }
 
 ItemFind findItemSlot(InventorySnapshot const& snapshot, Block const& block) {
-    ItemStack const want = makePlacingItem(block);
+    ItemStack const want = block::makePlacementItem(block);
     auto const [first, last] = snapshot.equal_range(want.getIdAux());
     for (auto it = first; it != last; ++it) {
         if (it->second.item->sameItemAndAux(want)) return it->second;
@@ -575,7 +526,8 @@ bool placementPredictionMatches(
     Block const& ghost,
     Block const* expectedDoorUpper = nullptr
 ) {
-    if (basePlacedName(predicted.getTypeName()) != basePlacedName(ghost.getTypeName())) return false;
+    if (block::placeableBaseName(predicted.getTypeName())
+        != block::placeableBaseName(ghost.getTypeName())) return false;
 
     auto const& name = ghost.getTypeName();
     if (name.ends_with("_stairs")) {
@@ -603,15 +555,10 @@ bool placementPredictionMatches(
     // their neighbours after placement (nothing is chosen at placement), so accept
     // the placement on block identity alone — the connections resolve as the
     // surrounding blocks fill in.
-    if (name.ends_with("_wall") || name.ends_with("_fence")
-        || name.ends_with("_glass_pane") || name == "minecraft:glass_pane"
-        || name == "minecraft:iron_bars") {
-        return true;
-    }
     // Repeaters and comparators: only facing is chosen at placement (delay/mode
     // are set by right-clicking afterwards, the powered bit is redstone-driven),
     // so match on facing alone — including the powered name variants, which reach
-    // here via basePlacedName above. This also lets a delay-adjusted repeater place.
+    // here via the shared placeable-base rule. This also lets a delay-adjusted repeater place.
     if (name == "minecraft:unpowered_repeater" || name == "minecraft:powered_repeater"
         || name == "minecraft:unpowered_comparator" || name == "minecraft:powered_comparator") {
         return sameSerializedState(predicted, ghost, "minecraft:cardinal_direction");
@@ -636,13 +583,18 @@ bool placementPredictionMatches(
     // base block and switched on by the game afterwards, so the names only matched
     // after normalization and the runtime id is expected to differ. Accept on
     // facing where directional (furnaces), otherwise unconditionally (lamp/ore).
-    if (basePlacedName(ghost.getTypeName()) != ghost.getTypeName()) {
+    if (block::placeableBaseName(ghost.getTypeName()) != ghost.getTypeName()) {
         if (!serializedState(ghost, "facing_direction").empty())
             return sameSerializedState(predicted, ghost, "facing_direction");
         if (!serializedState(ghost, "minecraft:cardinal_direction").empty())
             return sameSerializedState(predicted, ghost, "minecraft:cardinal_direction");
         return true;
     }
+    // Bedrock owns neighbour-derived placement-state tolerance (walls, fences,
+    // panes, bars and future equivalents). Keep specialized player-controlled
+    // states above strict, then defer all remaining exceptions to the official
+    // API instead of maintaining block-name suffix lists.
+    if (ghost.allowStateMismatchOnPlacement(predicted)) return true;
     return predicted.getRuntimeId() == ghost.getRuntimeId();
 }
 
@@ -822,30 +774,7 @@ void tickRangePlaceImpl(LocalPlayer& player, PlacementContext const& placementCo
     }
 }
 
-// Refresh the material HUD's held-item counts. Runs on the game tick thread,
-// where touching the inventory and constructing ItemStacks (item-registry
-// lookups, inside availableCounts) is safe; the HUD renders on the D3D present
-// thread and must never call those APIs. Throttled — the HUD needs no per-tick
-// precision — and stores a snapshot the HUD reads lock-free-ish under a mutex.
-void updateMaterialAvailability() {
-    static std::uint64_t lastMs = 0;
-    auto const now = GetTickCount64();
-    if (now - lastMs < 400) return;
-    lastMs = now;
-
-    auto& state = structure::detail::StructureUiState::getInstance();
-    auto const requirements = state.materialRequirements();
-    if (requirements.empty()) return;
-    std::vector<std::string> names;
-    names.reserve(requirements.size());
-    for (auto const& requirement : requirements) names.push_back(requirement.typeName);
-    state.setMaterialAvailability(detail::availableCounts(names));
-}
-
 void tickEasyPlaceImpl() {
-    structure::processPendingMaterialList();
-    updateMaterialAvailability();
-
     auto client = ll::service::getClientInstance();
     if (!client) {
         updateAimedProjectedBlockName(nullptr);
@@ -987,108 +916,20 @@ void tickEasyPlaceImpl() {
 
 namespace detail {
 
-std::vector<int> availableCounts(std::vector<std::string> const& blockNames) {
-    std::vector<int> result(blockNames.size(), 0);
+ManualTargetStatus manualTargetStatusUnderCrosshair() {
     auto client = ll::service::getClientInstance();
     auto* player = client ? client->getLocalPlayer() : nullptr;
-    if (!player) return result;
-    // One inventory pass builds a histogram keyed by the item TYPE NAME (state /
-    // aux independent); each material then looks up the item its block resolves
-    // to (same resolution the material list uses).
-    auto& inventory = player->getInventory();
-    std::unordered_map<std::string, int> histogram;
-    for (int slot = 0; slot < kInventorySlots; ++slot) {
-        auto const& item = inventory.getItem(slot);
-        if (item.isNull()) continue;
-        histogram[item.getTypeName()] += static_cast<int>(item.mCount);
-    }
-    for (std::size_t i = 0; i < blockNames.size(); ++i) {
-        auto const& block =
-            BlockTypeRegistry::get().getDefaultBlockState(HashedString(blockNames[i]), false);
-        if (block.isAir()) continue;
-        auto const item = resolveMaterialItem(block);
-        if (!item.valid) continue;
-        auto const found = histogram.find(item.itemId);
-        if (found != histogram.end()) result[i] = found->second;
-    }
-    return result;
-}
-
-int maxStackForBlock(Block const& block) {
-    ItemStack const item = makePlacingItem(block);
-    if (item.isNull()) return 64;
-    int const size = static_cast<int>(item.getMaxStackSize());
-    return size > 0 ? size : 64;
-}
-
-std::string_view baseMaterialName(std::string_view name) {
-    return basePlacedName(name);
-}
-
-// Drop Minecraft formatting codes (§ + one code char). getHoverName wraps names
-// like "§f白色染色玻璃§r"; ImGui shows the raw § so they must be stripped. § is
-// U+00A7 (UTF-8 0xC2 0xA7); the code char after it is a single ASCII byte.
-std::string stripFormattingCodes(std::string const& text) {
-    std::string out;
-    out.reserve(text.size());
-    for (std::size_t i = 0; i < text.size();) {
-        if (i + 1 < text.size() && static_cast<unsigned char>(text[i]) == 0xC2
-            && static_cast<unsigned char>(text[i + 1]) == 0xA7) {
-            i += 2;                    // skip the § character
-            if (i < text.size()) ++i;  // skip the format code char
-            continue;
-        }
-        out.push_back(text[i++]);
-    }
-    return out;
-}
-
-std::string materialDisplayName(Block const& block) {
-    ItemStack const item = makePlacingItem(block);
-    if (item.isNull()) return {};
-    return stripFormattingCodes(item.getHoverName());
-}
-
-MaterialItem resolveMaterialItem(Block const& block) {
-    // The placement item is tried first: it always uses aux 0 (so different block
-    // states collapse to one item) and normalizes runtime variants via
-    // basePlacedName + placingItemName (powered/unpowered repeater & comparator ->
-    // the repeater/comparator item, lit lamp -> redstone lamp, wire -> redstone).
-    // ItemInstance(Block) is used only when that has no real item — it resolves
-    // block-only forms via the game's own mapping (wall signs -> sign item,
-    // coral wall fans -> coral fan item, etc.).
-    ItemStack const placeItem = makePlacingItem(block);
-    if (!placeItem.isNull()) {
-        int const size = static_cast<int>(placeItem.getMaxStackSize());
-        return MaterialItem{
-            stripFormattingCodes(placeItem.getHoverName()),
-            placeItem.getTypeName(),
-            size > 0 ? size : 64,
-            true,
-        };
-    }
-    ItemInstance const gameItem{block};
-    if (gameItem.isNull()) return {};
-    int const size = static_cast<int>(gameItem.getMaxStackSize());
-    return MaterialItem{
-        stripFormattingCodes(gameItem.getHoverName()),
-        gameItem.getTypeName(),
-        size > 0 ? size : 64,
-        true,
-    };
-}
-
-bool manualTargetUnderCrosshair() {
-    auto client = ll::service::getClientInstance();
-    auto* player = client ? client->getLocalPlayer() : nullptr;
-    if (!player) return false;
+    if (!player) return ManualTargetStatus::None;
     Vec3 const eye = player->getEyePos();
     Vec3 const rawDir = player->getViewVector(1.0f);
     float const length = std::sqrt(rawDir.x * rawDir.x + rawDir.y * rawDir.y + rawDir.z * rawDir.z);
-    if (length <= 0.0f) return false;
+    if (length <= 0.0f) return ManualTargetStatus::None;
     Vec3 const dir{rawDir.x / length, rawDir.y / length, rawDir.z / length};
     auto const target = findProjectionTarget(*player, eye, dir, player->getPickRange());
-    return target && findItemSlot(*player, *target->block).slot >= 0;
+    if (!target) return ManualTargetStatus::None;
+    return findItemSlot(*player, *target->block).slot >= 0
+        ? ManualTargetStatus::Ready
+        : ManualTargetStatus::MissingMaterial;
 }
 
 void tickEasyPlace() {

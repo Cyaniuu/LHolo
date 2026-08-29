@@ -17,6 +17,7 @@
 #include "structure/StructureLoader.h"
 
 #include "settings/SettingsStore.h"
+#include "structure/MaterialTracker.h"
 #include "structure/formats/StructureFormatLoaders.h"
 #include "structure/StructureSession.h"
 #include "structure/StructurePaths.h"
@@ -30,22 +31,17 @@
 #include "ui/LHoloMenu.h"
 #include "ui/MenuWidgets.h"
 #include "place/PlaceHelper.h"
-#include "place/PlacementExecutor.h"
 #include "plugin/LHolo.h"
 #include "projection/Projection.h"
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <bit>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <cwctype>
 #include <fstream>
-#include <iterator>
-#include <limits>
-#include <map>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -60,26 +56,14 @@
 #include "ll/api/mod/NativeMod.h"
 #include "ll/api/service/Bedrock.h"
 #include "imgui.h"
-#include "mc/deps/core/string/HashedString.h"
 #include "mc/client/game/ClientInstance.h"
 #include "mc/client/game/IClientInstance.h"
 #include "mc/client/player/LocalPlayer.h"
-#include "mc/world/item/ItemStack.h"
-#include "mc/world/item/Item.h"
-#include "mc/world/item/registry/ItemRegistry.h"
-#include "mc/world/item/registry/ItemRegistryManager.h"
 #include "mc/world/level/Level.h"
-#include "mc/world/level/block/Block.h"
-#include "mc/world/level/block/registry/BlockTypeRegistry.h"
-#include "mc/world/level/material/Material.h"
-#include "mc/locale/I18n.h"
 
 namespace lholo::structure {
 namespace {
 
-using detail::MaterialRequirement;
-
-constexpr char           kMaterialPopupName[]       = "材料清单###LHoloMaterialList";
 constexpr std::size_t    kGuiHotkeyIndex             = 0;
 constexpr std::size_t    kLayerIncreaseHotkeyIndex   = 7;
 constexpr std::size_t    kLayerDecreaseHotkeyIndex   = 8;
@@ -88,121 +72,6 @@ constexpr std::size_t    kToggleEasyHotkeyIndex      = 10;
 constexpr std::size_t    kLoadProjectionHotkeyIndex  = 11;
 constexpr std::size_t    kCloseProjectionHotkeyIndex = 12;
 constexpr std::size_t    kToggleRangeHotkeyIndex     = 13;
-
-
-std::string localizedBlockName(Block const& block, std::string_view localeCode) {
-    auto const& typeName = block.getTypeName();
-    auto const itemId = ItemRegistry::getBlockItemId(block);
-    auto const item = ItemRegistryManager::getItemRegistry().getItem(itemId);
-    if (auto* itemPtr = item.get()) {
-        ItemStack const itemStack(*itemPtr, 1, 0, nullptr);
-        auto const name = itemStack.getName();
-        if (!name.empty() && name != typeName) return name;
-    }
-
-    auto const translationKey = block.buildDescriptionName();
-    if (!translationKey.empty()) {
-        auto& i18n = ::getI18n();
-        auto locale = localeCode.empty()
-            ? i18n.getCurrentLanguage().get()
-            : i18n.getLocaleFor(std::string{localeCode});
-        if (locale) {
-            auto const localized = i18n.get(
-                translationKey,
-                std::vector<std::string>{},
-                locale
-            );
-            if (!localized.empty() && localized != translationKey) return localized;
-        }
-    }
-
-    auto name = block.getDisplayName();
-    if (name.empty()) name = typeName;
-    return name;
-}
-
-std::vector<MaterialRequirement> collectMaterials(
-    std::vector<LoadedStructure::RenderBlock> const& renderBlocks,
-    std::string_view localeCode
-) {
-    std::map<std::string, MaterialRequirement> byType;
-    std::map<std::string, MaterialRequirement> byLiquidType;
-    auto aggregate = [&](auto& destination, Block const* block) {
-        if (!block) return;
-
-        std::string const typeName{block->getTypeName()};
-        // Technical/generated blocks that the player never places directly:
-        // bubble columns (soul sand / magma under water) and the piston arm/head
-        // and moving-block helpers. Never list them as materials.
-        if (typeName == "minecraft:bubble_column"
-            || typeName == "minecraft:piston_arm_collision"
-            || typeName == "minecraft:sticky_piston_arm_collision"
-            || typeName == "minecraft:moving_block") {
-            return;
-        }
-
-        std::string key;
-        std::string displayName;
-        int stackSize = 64;
-        // Water/lava have no item, so keep them keyed by name and merge the
-        // static/flowing variants into one "水" / "熔岩" entry.
-        if (typeName == "minecraft:water" || typeName == "minecraft:flowing_water") {
-            key = "minecraft:water";
-            displayName = "水";
-        } else if (typeName == "minecraft:lava" || typeName == "minecraft:flowing_lava") {
-            key = "minecraft:lava";
-            displayName = "熔岩";
-        } else if (auto const item = place::detail::resolveMaterialItem(*block); item.valid) {
-            // Group by the real item, so wall/standing/hanging signs, coral fans,
-            // powered/unpowered and lit/unlit variants, and different block states
-            // of one item all collapse onto one entry that reads and counts as the
-            // item you actually gather.
-            key = "item:" + item.itemId;
-            displayName = item.name;
-            stackSize = item.stackSize;
-        } else {
-            key = typeName;
-            displayName = localizedBlockName(*block, localeCode);
-        }
-
-        auto [it, inserted] = destination.try_emplace(key);
-        if (inserted) {
-            it->second.displayName = displayName;
-            // Any block that maps to this item works; availableCounts re-resolves.
-            it->second.typeName = typeName;
-            it->second.stackSize = stackSize;
-        }
-        if (it->second.count != std::numeric_limits<std::uint64_t>::max()) {
-            ++it->second.count;
-        }
-    };
-
-    for (auto const& entry : renderBlocks) {
-        aggregate(byType, entry.block);
-        aggregate(byLiquidType, entry.liquid);
-    }
-
-    std::vector<MaterialRequirement> materials;
-    auto appendSorted = [&materials](auto& source) {
-        std::vector<MaterialRequirement> sorted;
-        sorted.reserve(source.size());
-        for (auto& entry : source) sorted.push_back(std::move(entry.second));
-        std::sort(sorted.begin(), sorted.end(), [](auto const& left, auto const& right) {
-            if (left.count != right.count) return left.count > right.count;
-            return left.typeName < right.typeName;
-        });
-        materials.insert(
-            materials.end(),
-            std::make_move_iterator(sorted.begin()),
-            std::make_move_iterator(sorted.end())
-        );
-    };
-    materials.reserve(byType.size() + byLiquidType.size());
-    appendSorted(byType);
-    appendSorted(byLiquidType);
-    return materials;
-}
-
 auto& logger() {
     return LHolo::getInstance().getSelf().getLogger();
 }
@@ -223,22 +92,7 @@ unsigned int currentHotkeyModifiers() {
 } // namespace
 
 void requestMaterialList() {
-    uiState().requestMaterialList();
-}
-
-void processPendingMaterialList() {
-    if (!uiState().consumeMaterialListRequest()) return;
-
-    auto const loaded = getLoaded();
-    std::string localeCode;
-    if (auto client = ll::service::getClientInstance()) {
-        if (auto* player = client->getLocalPlayer()) localeCode = player->getLocaleCode();
-    }
-
-    std::vector<MaterialRequirement> materials;
-    if (loaded) materials = collectMaterials(loaded->renderBlocks, localeCode);
-
-    uiState().replaceMaterialRequirements(std::move(materials));
+    detail::requestMaterialListRefresh();
 }
 
 void requestOpenGui() {
@@ -493,16 +347,6 @@ bool hasHudInfo() {
 }
 
 namespace {
-std::mutex            gActionHintMutex;
-std::string          gActionHintText;
-std::atomic_uint64_t gActionHintExpiry{0};
-std::atomic_bool     gExperimentalConsent{false};
-// Opt-in, off by default: the on-screen material-progress HUD is toggled from
-// the material-list popup, independent of the main projection HUD.
-std::atomic_bool     gMaterialHudEnabled{false};
-// Material HUD corner, same encoding as the projection HUD position
-// (0 top-left, 1 bottom-left, 2 top-right, 3 bottom-right). Default bottom-left.
-std::atomic_int      gMaterialHudPosition{1};
 // Render-thread only. renderHud records its rect + corner each frame so
 // renderMaterialHud (drawn right after, same frame) can stack clear of it when
 // they share a corner. `frame` guards against stale reads.
@@ -513,66 +357,55 @@ struct ProjectionHudLayout {
     float bottomY{0.0f};
 };
 ProjectionHudLayout  gProjectionHudLayout;
-// 0 none, -1 view-only, 1 manual, 2 easy, 3 range. Set when a hotkey needs
-// consent so the menu jumps to the experimental page and opens the popup.
-std::atomic_int      gPendingConsentPopupFeature{0};
 } // namespace
 
 bool experimentalConsentGiven() {
-    return gExperimentalConsent.load(std::memory_order_acquire);
+    return uiState().experimentalConsentGiven();
 }
 
 void setExperimentalConsentGiven(bool given) {
-    gExperimentalConsent.store(given, std::memory_order_release);
+    uiState().setExperimentalConsentGiven(given);
 }
 
 bool materialHudEnabled() {
-    return gMaterialHudEnabled.load(std::memory_order_acquire);
+    return uiState().materialHudEnabled();
 }
 
 void setMaterialHudEnabled(bool enabled) {
-    gMaterialHudEnabled.store(enabled, std::memory_order_release);
+    uiState().setMaterialHudEnabled(enabled);
 }
 
 int materialHudPosition() {
-    return gMaterialHudPosition.load(std::memory_order_acquire);
+    return uiState().materialHudPosition();
 }
 
 void setMaterialHudPosition(int position) {
-    gMaterialHudPosition.store(std::clamp(position, 0, 3), std::memory_order_release);
+    uiState().setMaterialHudPosition(position);
 }
 
 void requestExperimentalConsentPopup(int feature) {
-    gPendingConsentPopupFeature.store(feature, std::memory_order_release);
+    uiState().requestExperimentalConsentPopup(feature);
     if (!isGuiVisible()) requestOpenGui();
 }
 
 int consumeExperimentalConsentPopupRequest() {
-    return gPendingConsentPopupFeature.exchange(0, std::memory_order_acq_rel);
+    return uiState().consumeExperimentalConsentPopupRequest();
 }
 
 void showActionHint(std::string text, std::uint64_t durationMs) {
-    {
-        std::lock_guard lock(gActionHintMutex);
-        gActionHintText = std::move(text);
-    }
-    gActionHintExpiry.store(GetTickCount64() + durationMs, std::memory_order_release);
+    uiState().setActionHint(std::move(text), GetTickCount64() + durationMs);
 }
 
 bool actionHintActive() {
-    return GetTickCount64() < gActionHintExpiry.load(std::memory_order_acquire);
+    return GetTickCount64() < uiState().actionHintExpiry();
 }
 
 void renderActionHint() {
     auto const now = GetTickCount64();
-    auto const expiry = gActionHintExpiry.load(std::memory_order_acquire);
+    auto const hint = uiState().actionHint();
+    auto const expiry = hint.expiry;
     if (now >= expiry) return;
-    std::string text;
-    {
-        std::lock_guard lock(gActionHintMutex);
-        text = gActionHintText;
-    }
-    if (text.empty()) return;
+    if (hint.text.empty()) return;
 
     auto const remaining = expiry - now;
     float const alpha = remaining < 300 ? static_cast<float>(remaining) / 300.0f : 1.0f;
@@ -602,7 +435,7 @@ void renderActionHint() {
         | ImGuiWindowFlags_NoNavFocus
         | ImGuiWindowFlags_NoInputs;
     if (ImGui::Begin("##LHoloActionHint", nullptr, flags)) {
-        ImGui::TextUnformatted(text.c_str());
+        ImGui::TextUnformatted(hint.text.c_str());
     }
     ImGui::End();
     ImGui::PopStyleVar(2);
@@ -747,15 +580,14 @@ void renderMaterialHud() {
     auto const hud = uiState().hud();
     if (!detail::StructureSession::getInstance().hasLoaded()) return;
     // Both vectors come from one locked copy so they stay index-aligned. The
-    // inventory scan itself runs on the game tick thread (availableCounts touches
-    // the item registry, which must not be called from this present thread).
+    // material tracker scans inventory on the game tick thread; this present
+    // thread only reads the completed snapshot.
     auto const snapshot = uiState().materialSnapshot();
     auto const& materials = snapshot.requirements;
     auto const& available = snapshot.available;
     if (materials.empty()) {
-        // Nothing computed yet for this structure — kick off a scan; it lands via
-        // processPendingMaterialList on the next tick. Setting the request flag is
-        // just an atomic store, so it is safe from the render thread.
+        // Nothing computed yet for this structure — request a refresh for the
+        // next game tick. The request itself is an atomic store.
         uiState().requestMaterialList();
         return;
     }
@@ -1097,6 +929,7 @@ void restoreSavedProjection() {
     session.setLayerAxis(saved.transform.layerAxis);
     projection::requestNextStructureAnchor(saved.anchorX, saved.anchorY, saved.anchorZ);
     session.replaceLoaded(std::move(loaded), savedPath, "已恢复上次投影记录，等待进入渲染");
+    detail::invalidateMaterialList();
     logger().info(
         "Restoring projection {} at ({}, {}, {})",
         savedPath, saved.anchorX, saved.anchorY, saved.anchorZ

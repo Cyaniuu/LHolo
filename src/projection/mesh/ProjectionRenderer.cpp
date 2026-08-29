@@ -291,17 +291,36 @@ void submitProjectionMeshPass(
         }
     };
 
+    struct MaterialStateRestore {
+        mce::RenderMaterial* material{};
+        std::optional<mce::BlendStateDescription> blend;
+        mce::PrimitiveMode primitive{};
+        float depthBias{};
+        float slopeBias{};
+        bool restorePrimitive{};
+        ~MaterialStateRestore() {
+            if (!material || !blend) return;
+            material->blendStateDescription.get() = *blend;
+            material->mDepthBias = depthBias;
+            material->mSlopeScaledDepthBias = slopeBias;
+            if (restorePrimitive) material->mPrimitiveMode = primitive;
+        }
+    };
+
     if (static_cast<bool>(itemRenderer.mIsDeferredEnabled)) {
         // Vibrant Visuals: reuse the colored outline shader for the hull and
         // restore every temporary material field immediately after submission.
         auto* renderMaterial = outlineMaterial
             ? const_cast<mce::RenderMaterial*>(outlineMaterial.operator->())
             : nullptr;
-        if (renderMaterial) {
-            auto const savedPrimitive = renderMaterial->mPrimitiveMode;
-            auto const savedBlend = renderMaterial->blendStateDescription.get();
-            auto const savedDepthBias = renderMaterial->mDepthBias;
-            auto const savedSlopeBias = renderMaterial->mSlopeScaledDepthBias;
+        MaterialStateRestore restore;
+        if (renderMaterial && blendMaterial) {
+            restore.material = renderMaterial;
+            restore.blend = renderMaterial->blendStateDescription.get();
+            restore.primitive = renderMaterial->mPrimitiveMode;
+            restore.depthBias = renderMaterial->mDepthBias;
+            restore.slopeBias = renderMaterial->mSlopeScaledDepthBias;
+            restore.restorePrimitive = true;
             renderMaterial->mPrimitiveMode = mce::PrimitiveMode::QuadList;
             renderMaterial->blendStateDescription.get()
                 = blendMaterial->blendStateDescription.get();
@@ -309,10 +328,6 @@ void submitProjectionMeshPass(
             renderMaterial->mSlopeScaledDepthBias = 15.0f;
             renderOverlayMeshes(state.warningFillSectionMeshes, outlineMaterial, missingSeeThrough);
             renderOverlayMeshes(state.wrongFillSectionMeshes, outlineMaterial, correctionSeeThrough);
-            renderMaterial->mPrimitiveMode = savedPrimitive;
-            renderMaterial->blendStateDescription.get() = savedBlend;
-            renderMaterial->mDepthBias = savedDepthBias;
-            renderMaterial->mSlopeScaledDepthBias = savedSlopeBias;
         }
     } else if (warningMaterial) {
         // Vanilla selection overlay has the required depth bias. Temporarily
@@ -320,18 +335,7 @@ void submitProjectionMeshPass(
         auto* renderMaterial = levelRenderer
             ? const_cast<mce::RenderMaterial*>(warningMaterial.operator->())
             : nullptr;
-        struct MaterialStateRestore {
-            mce::RenderMaterial* material{};
-            std::optional<mce::BlendStateDescription> blend;
-            float depthBias{};
-            float slopeBias{};
-            ~MaterialStateRestore() {
-                if (!material || !blend) return;
-                material->blendStateDescription.get() = *blend;
-                material->mDepthBias = depthBias;
-                material->mSlopeScaledDepthBias = slopeBias;
-            }
-        } restore;
+        MaterialStateRestore restore;
         if (renderMaterial && blendMaterial) {
             restore.material = renderMaterial;
             restore.blend = renderMaterial->blendStateDescription.get();

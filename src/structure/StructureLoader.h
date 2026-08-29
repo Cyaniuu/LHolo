@@ -86,7 +86,6 @@ void requestExperimentalConsentPopup(int feature);
 int  consumeExperimentalConsentPopupRequest();
 void renderGui();
 void requestMaterialList();
-void processPendingMaterialList();
 void loadSettings();
 void saveSettings();
 std::shared_ptr<LoadedStructure const> getLoaded();

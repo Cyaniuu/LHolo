@@ -3,7 +3,9 @@
 
 #include <cstdio>
 #include <fstream>
+#include <sstream>
 
+#include "block/BlockPlacementRules.h"
 #include "place/PlacementState.h"
 #include "projection/core/ProjectionRules.h"
 #include "projection/runtime/ProjectionProgress.h"
@@ -132,11 +134,22 @@ void testSettingsStore() {
     settings.guiHotkeyModifiers = 1;
     settings.hudShowProjectedBlockName = false;
     settings.autoPlacementBreakCooldownSeconds = 27;
+    settings.correctionSeeThrough = true;
+    settings.extraBlocksEnabled = true;
+    settings.materialHudEnabled = true;
+    settings.materialHudPosition = 3;
+    settings.toggleRangeHotkey = 'G';
     settings.moveHotkeys[4] = 0x57; // W
     settings.hasSavedProjection = true;
     settings.savedAnchorX = 12;
     settings.savedAnchorZ = -34;
     lholo::settings::saveSettingsFile(path, settings);
+    {
+        std::ifstream saved(path);
+        std::ostringstream contents;
+        contents << saved.rdbuf();
+        LHOLO_CHECK(contents.str().find("\"version\": 11") != std::string::npos);
+    }
 
     lholo::settings::Settings loaded;
     LHOLO_CHECK(lholo::settings::loadSettingsFile(path, loaded));
@@ -145,6 +158,11 @@ void testSettingsStore() {
     LHOLO_CHECK(loaded.guiHotkeyModifiers == 1);
     LHOLO_CHECK(!loaded.hudShowProjectedBlockName);
     LHOLO_CHECK(loaded.autoPlacementBreakCooldownSeconds == 27);
+    LHOLO_CHECK(loaded.correctionSeeThrough);
+    LHOLO_CHECK(loaded.extraBlocksEnabled);
+    LHOLO_CHECK(loaded.materialHudEnabled);
+    LHOLO_CHECK(loaded.materialHudPosition == 3);
+    LHOLO_CHECK(loaded.toggleRangeHotkey == 'G');
     LHOLO_CHECK(loaded.moveHotkeys[4] == 0x57);
     LHOLO_CHECK(loaded.hasSavedProjection);
     LHOLO_CHECK(loaded.savedAnchorX == 12);
@@ -160,6 +178,11 @@ void testSettingsStore() {
     LHOLO_CHECK(lholo::settings::loadSettingsFile(path, migrated));
     LHOLO_CHECK(!migrated.hudShowProjectedBlockName);
     LHOLO_CHECK(migrated.autoPlacementBreakCooldownSeconds == 10);
+    LHOLO_CHECK(!migrated.correctionSeeThrough);
+    LHOLO_CHECK(!migrated.extraBlocksEnabled);
+    LHOLO_CHECK(!migrated.materialHudEnabled);
+    LHOLO_CHECK(migrated.materialHudPosition == 1);
+    LHOLO_CHECK(migrated.toggleRangeHotkey == 'Y');
 
     lholo::settings::Settings missing;
     std::filesystem::remove(path, error);
@@ -346,6 +369,7 @@ void testStructureUiState() {
     LHOLO_CHECK(state.hotkey(0).modifiers == lholo::ui::kHotkeyModifierAlt);
     LHOLO_CHECK(state.hotkey(1).key == VK_LEFT);
     LHOLO_CHECK(state.hotkey(7).key == VK_UP);
+    LHOLO_CHECK(state.hotkey(13).key == 'Y');
 
     state.beginHotkeyCapture(1);
     LHOLO_CHECK(state.capturingHotkey() == 1);
@@ -374,19 +398,35 @@ void testStructureUiState() {
     state.queueMove(0);
     state.queueMove(4);
     state.queueLayerDelta(-1);
+    state.queueToggleRange();
     state.requestSettingsSave();
     auto const pending = state.consumePendingHotkeyActions();
     LHOLO_CHECK(pending.offsetX == -1);
     LHOLO_CHECK(pending.offsetY == 1);
     LHOLO_CHECK(pending.offsetZ == 0);
     LHOLO_CHECK(pending.layerDelta == -1);
+    LHOLO_CHECK(pending.toggleRange);
     LHOLO_CHECK(pending.settingsSave);
 
-    state.replaceMaterialRequirements({{"Stone", "minecraft:stone", 12}});
+    state.replaceMaterialRequirements({{"Stone", "minecraft:stone", "minecraft:stone", 12}});
     auto const materials = state.materialRequirements();
     LHOLO_CHECK(materials.size() == 1);
     LHOLO_CHECK(materials[0].typeName == "minecraft:stone");
+    LHOLO_CHECK(materials[0].itemId == "minecraft:stone");
     LHOLO_CHECK(materials[0].count == 12);
+
+    state.setExperimentalConsentGiven(true);
+    state.setMaterialHudEnabled(true);
+    state.setMaterialHudPosition(3);
+    state.requestExperimentalConsentPopup(3);
+    state.setActionHint("test", 1234);
+    LHOLO_CHECK(state.experimentalConsentGiven());
+    LHOLO_CHECK(state.materialHudEnabled());
+    LHOLO_CHECK(state.materialHudPosition() == 3);
+    LHOLO_CHECK(state.consumeExperimentalConsentPopupRequest() == 3);
+    auto const hint = state.actionHint();
+    LHOLO_CHECK(hint.text == "test");
+    LHOLO_CHECK(hint.expiry == 1234);
 
     state.setGuiVisible(false);
     LHOLO_CHECK(state.toggleGuiVisible());
@@ -400,6 +440,10 @@ void testStructureUiState() {
     state.resetHotkeys();
     state.resetHotkeyState();
     state.clearMaterials();
+    state.setExperimentalConsentGiven(false);
+    state.setMaterialHudEnabled(false);
+    state.setMaterialHudPosition(1);
+    state.setActionHint({}, 0);
     state.applyHud(HudStateSnapshot{});
 }
 
@@ -409,10 +453,20 @@ void testHotkeyFormat() {
     LHOLO_CHECK(lholo::ui::isModifierKey(VK_LWIN));
     LHOLO_CHECK(!lholo::ui::isModifierKey('A'));
     LHOLO_CHECK(lholo::ui::hotkeyName(0) == "未设置");
+    LHOLO_CHECK(lholo::ui::hotkeyName(VK_MBUTTON) == "鼠标中键");
+    LHOLO_CHECK(lholo::ui::hotkeyName(VK_XBUTTON1) == "鼠标侧键1");
+    LHOLO_CHECK(lholo::ui::hotkeyName(VK_XBUTTON2) == "鼠标侧键2");
     LHOLO_CHECK(lholo::ui::hotkeyChordName(0, 0) == "未设置");
     auto const chord = lholo::ui::hotkeyChordName(lholo::ui::kHotkeyModifierControl, 'M');
     LHOLO_CHECK(chord.rfind("Ctrl + ", 0) == 0);
     LHOLO_CHECK(chord.size() > 7);
+}
+
+void testBlockPlacementRules() {
+    using lholo::block::placeableBaseName;
+    LHOLO_CHECK(placeableBaseName("minecraft:lit_redstone_lamp") == "minecraft:redstone_lamp");
+    LHOLO_CHECK(placeableBaseName("minecraft:powered_repeater") == "minecraft:unpowered_repeater");
+    LHOLO_CHECK(placeableBaseName("minecraft:stone") == "minecraft:stone");
 }
 
 void testJavaTextComponents() {
@@ -435,6 +489,7 @@ int main() {
     testPlacementState();
     testStructureUiState();
     testHotkeyFormat();
+    testBlockPlacementRules();
     testJavaTextComponents();
     std::printf("LHoloLogicTests: %d checks, %d failures\n", gChecks, gFailures);
     return gFailures == 0 ? 0 : 1;

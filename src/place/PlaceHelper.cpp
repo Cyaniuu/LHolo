@@ -20,6 +20,7 @@
 #include "place/PlacementState.h"
 
 #include "plugin/LHolo.h"
+#include "structure/MaterialTracker.h"
 #include "structure/StructureLoader.h"
 
 #include "ll/api/memory/Hook.h"
@@ -38,9 +39,6 @@
 #include "mc/world/level/block/Block.h"
 
 #include <Windows.h>
-
-#include <array>
-#include <string_view>
 
 #include <algorithm>
 
@@ -63,6 +61,7 @@ LL_TYPE_INSTANCE_HOOK(
     void,
     ::Tick const& currentTick
 ) {
+    structure::detail::tickMaterialTracker(*this);
     detail::tickEasyPlace();
     origin(currentTick);
 }
@@ -78,33 +77,15 @@ bool isLocalManualBuild(GameMode& gm) {
     return localPlayer && &gm.mPlayer == static_cast<Player*>(localPlayer);
 }
 
-// Blocks whose right-click opens/uses them rather than placing. Manual mode must
-// let vanilla handle these so a chest still opens and a repeater's delay can be
-// changed even while the crosshair sits inside a dense projection.
-bool blockAcceptsRightClick(Block const& block) {
-    if (block.hasBlockEntity()) return true;  // chest/furnace/hopper/sign/barrel/...
-    std::string_view name = block.getTypeName();
-    if (name.starts_with("minecraft:")) name.remove_prefix(sizeof("minecraft:") - 1);
-    static constexpr std::string_view kExact[]{
-        "repeater", "unpowered_repeater", "powered_repeater",
-        "comparator", "unpowered_comparator", "powered_comparator",
-        "lever", "daylight_detector", "daylight_detector_inverted",
-        "crafting_table", "cartography_table", "fletching_table", "smithing_table",
-        "loom", "stonecutter_block", "grindstone", "enchanting_table",
-        "brewing_stand", "beacon", "cake", "composter", "respawn_anchor",
-        "lodestone", "dragon_egg", "flower_pot", "noteblock", "jukebox",
-        "cauldron", "lava_cauldron", "lectern", "beehive", "bee_nest", "crafter",
-    };
-    for (auto const& exact : kExact) if (name == exact) return true;
-    static constexpr std::string_view kSuffix[]{
-        "_button", "_door", "_trapdoor", "_fence_gate", "_bed", "_anvil",
-    };
-    for (auto const& suffix : kSuffix) if (name.ends_with(suffix)) return true;
-    return false;
+void cancelPendingManualPress() {
+    placementState().setManualHeld(false);
+    placementState().setManualPlaceRequested(false);
 }
 
 bool aimedBlockAcceptsRightClick(GameMode& gm, BlockPos const& pos) {
-    return blockAcceptsRightClick(gm.mPlayer.getDimensionBlockSource().getBlock(pos));
+    // Defer to Bedrock's official interaction classification so new vanilla and
+    // custom interactive blocks do not require an LHolo name allow-list.
+    return gm.mPlayer.getDimensionBlockSource().getBlock(pos).isInteractiveBlock();
 }
 
 // Manual-mode press edge. If the aimed block is interactive (chest, repeater,
@@ -123,14 +104,20 @@ LL_TYPE_INSTANCE_HOOK(
 ) {
     if (isLocalManualBuild(*this)) {
         if (aimedBlockAcceptsRightClick(*this, pos)) {
+            cancelPendingManualPress();
             origin(pos, face);  // let vanilla open/use the block
             return;
         }
-        placementState().setManualPressAt(GetTickCount64());
-        placementState().setManualHeld(true);
-        if (detail::manualTargetUnderCrosshair()) {
+        auto const targetStatus = detail::manualTargetStatusUnderCrosshair();
+        if (targetStatus == detail::ManualTargetStatus::Ready) {
+            placementState().setManualPressAt(GetTickCount64());
+            placementState().setManualHeld(true);
             placementState().setManualPlaceRequested(true);
+        } else if (targetStatus == detail::ManualTargetStatus::MissingMaterial) {
+            cancelPendingManualPress();
+            structure::showActionHint("背包中没有对应的投影方块");
         } else {
+            cancelPendingManualPress();
             structure::showActionHint("已被手动放置模式阻止（对准投影方块才能放置）");
         }
         return;  // LHolo owns this press; vanilla places nothing.
@@ -149,10 +136,20 @@ LL_TYPE_INSTANCE_HOOK(
     bool,
     ::ItemStack& item
 ) {
-    if (isLocalManualBuild(*this) && detail::manualTargetUnderCrosshair()) {
+    if (isLocalManualBuild(*this)) {
+        auto const targetStatus = detail::manualTargetStatusUnderCrosshair();
+        if (targetStatus == detail::ManualTargetStatus::None) {
+            cancelPendingManualPress();
+            return origin(item);
+        }
         placementState().setManualPressAt(GetTickCount64());
-        placementState().setManualPlaceRequested(true);
         placementState().setManualHeld(false);
+        if (targetStatus == detail::ManualTargetStatus::Ready) {
+            placementState().setManualPlaceRequested(true);
+        } else {
+            placementState().setManualPlaceRequested(false);
+            structure::showActionHint("背包中没有对应的投影方块");
+        }
         return false;
     }
     return origin(item);
