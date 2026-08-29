@@ -20,6 +20,8 @@
 #include "place/PlacementState.h"
 
 #include "plugin/LHolo.h"
+#include "structure/MaterialTracker.h"
+#include "structure/StructureLoader.h"
 
 #include "ll/api/memory/Hook.h"
 #include "ll/api/mod/NativeMod.h"
@@ -32,7 +34,9 @@
 #include "mc/world/actor/player/Player.h"
 #include "mc/world/item/ItemStack.h"
 #include "mc/world/level/BlockPos.h"
+#include "mc/world/level/BlockSource.h"
 #include "mc/world/level/Tick.h"
+#include "mc/world/level/block/Block.h"
 
 #include <Windows.h>
 
@@ -57,6 +61,7 @@ LL_TYPE_INSTANCE_HOOK(
     void,
     ::Tick const& currentTick
 ) {
+    structure::detail::tickMaterialTracker(*this);
     detail::tickEasyPlace();
     origin(currentTick);
 }
@@ -72,15 +77,22 @@ bool isLocalManualBuild(GameMode& gm) {
     return localPlayer && &gm.mPlayer == static_cast<Player*>(localPlayer);
 }
 
-void requestManualPlacement(bool held) {
-    placementState().setManualPressAt(GetTickCount64());
-    placementState().setManualPlaceRequested(true);
-    placementState().setManualHeld(held);
+void cancelPendingManualPress() {
+    placementState().setManualHeld(false);
+    placementState().setManualPlaceRequested(false);
 }
 
-// Manual-mode press edge: the initial right-click. Begin a held sequence (first
-// block placed immediately by tickEasyPlace, then typematic repeat) and cancel
-// the vanilla build start so nothing is placed twice.
+bool aimedBlockAcceptsRightClick(GameMode& gm, BlockPos const& pos) {
+    // Defer to Bedrock's official interaction classification so new vanilla and
+    // custom interactive blocks do not require an LHolo name allow-list.
+    return gm.mPlayer.getDimensionBlockSource().getBlock(pos).isInteractiveBlock();
+}
+
+// Manual-mode press edge. If the aimed block is interactive (chest, repeater,
+// ...) we let vanilla open/use it. Otherwise we take the right button over: on a
+// projection target LHolo places it (from tickEasyPlace), and off-target we block
+// the accidental placement and show a one-shot JE-style hint. The vanilla build
+// is never allowed through, so no stray block is placed.
 LL_TYPE_INSTANCE_HOOK(
     GameModeStartBuildHook,
     ll::memory::HookPriority::Normal,
@@ -91,15 +103,31 @@ LL_TYPE_INSTANCE_HOOK(
     uchar             face
 ) {
     if (isLocalManualBuild(*this)) {
-        requestManualPlacement(true);
-        return;  // LHolo handles the placement from tickEasyPlace.
+        if (aimedBlockAcceptsRightClick(*this, pos)) {
+            cancelPendingManualPress();
+            origin(pos, face);  // let vanilla open/use the block
+            return;
+        }
+        auto const targetStatus = detail::manualTargetStatusUnderCrosshair();
+        if (targetStatus == detail::ManualTargetStatus::Ready) {
+            placementState().setManualPressAt(GetTickCount64());
+            placementState().setManualHeld(true);
+            placementState().setManualPlaceRequested(true);
+        } else if (targetStatus == detail::ManualTargetStatus::MissingMaterial) {
+            cancelPendingManualPress();
+            structure::showActionHint("背包中没有对应的投影方块");
+        } else {
+            cancelPendingManualPress();
+            structure::showActionHint("已被手动放置模式阻止（对准投影方块才能放置）");
+        }
+        return;  // LHolo owns this press; vanilla places nothing.
     }
     origin(pos, face);
 }
 
 // Right-clicking a floating projection targets air, so Bedrock calls useItem
-// instead of startBuildBlock. Capture it as a one-shot request: unlike the
-// build path, air use has no matching stopBuildBlock edge we can rely on.
+// instead of startBuildBlock. Capture it only when a floating projection cell is
+// under the crosshair; otherwise let vanilla use the item (eat, etc.).
 LL_TYPE_INSTANCE_HOOK(
     GameModeUseItemHook,
     ll::memory::HookPriority::Normal,
@@ -109,13 +137,25 @@ LL_TYPE_INSTANCE_HOOK(
     ::ItemStack& item
 ) {
     if (isLocalManualBuild(*this)) {
-        requestManualPlacement(false);
+        auto const targetStatus = detail::manualTargetStatusUnderCrosshair();
+        if (targetStatus == detail::ManualTargetStatus::None) {
+            cancelPendingManualPress();
+            return origin(item);
+        }
+        placementState().setManualPressAt(GetTickCount64());
+        placementState().setManualHeld(false);
+        if (targetStatus == detail::ManualTargetStatus::Ready) {
+            placementState().setManualPlaceRequested(true);
+        } else {
+            placementState().setManualPlaceRequested(false);
+            structure::showActionHint("背包中没有对应的投影方块");
+        }
         return false;
     }
     return origin(item);
 }
 
-// Manual-mode release edge: stop the typematic repeat when the button is let go.
+// Manual-mode release edge: stop the repeat when the button is let go.
 LL_TYPE_INSTANCE_HOOK(
     GameModeStopBuildHook,
     ll::memory::HookPriority::Normal,
@@ -125,13 +165,15 @@ LL_TYPE_INSTANCE_HOOK(
 ) {
     if (isLocalManualBuild(*this)) {
         placementState().setManualHeld(false);
-        return;
     }
     origin();
 }
 
-// Suppress the vanilla continuous build while the button is held in manual mode;
-// LHolo drives placement from the press/hold state above.
+// GameMode::buildBlock is the vanilla continuous-build placement. In manual mode
+// we always suppress it (LHolo drives placement from the press edge above): the
+// interact for an interactive block already happened there, and this only ever
+// carries a block PLACEMENT, which manual mode blocks. No hint here — the press
+// edge shows it once, so holding the button never spams the notification.
 LL_TYPE_INSTANCE_HOOK(
     GameModeBuildBlockHook,
     ll::memory::HookPriority::Normal,
@@ -142,7 +184,9 @@ LL_TYPE_INSTANCE_HOOK(
     uchar             face,
     bool const        isSimTick
 ) {
-    if (isLocalManualBuild(*this)) return false;
+    if (isLocalManualBuild(*this)) {
+        return false;
+    }
     return origin(pos, face, isSimTick);
 }
 

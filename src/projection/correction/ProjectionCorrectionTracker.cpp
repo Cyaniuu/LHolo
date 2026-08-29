@@ -8,6 +8,7 @@
 
 #include "projection/correction/ProjectionCorrectionTracker.h"
 
+#include "block/BlockPlacementRules.h"
 #include "projection/core/ProjectionRules.h"
 #include "projection/core/ProjectionState.h"
 #include "projection/runtime/ProjectionWorldEvents.h"
@@ -15,6 +16,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <string_view>
 #include <tuple>
 
 #include "mc/world/level/BlockSource.h"
@@ -77,7 +79,9 @@ CorrectionProgressChanges updateCorrectionTracker(
         auto const bodyMissing = expected && actual.isAir();
         auto const liquidMissing = expectedLiquid && actualLiquid.isAir();
         auto const bodyTypeWrong = expected
-            && !actual.isAir() && actual.getTypeName() != expected->getTypeName();
+            && !actual.isAir()
+            && block::placeableBaseName(actual.getTypeName())
+                != block::placeableBaseName(expected->getTypeName());
         auto const liquidTypeWrong = expectedLiquid
             && !actualLiquid.isAir() && actualLiquid.getTypeName() != expectedLiquid->getTypeName();
         auto const liquidCellOccupiedBySolid = !expected && expectedLiquid && !actual.isAir()

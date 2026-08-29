@@ -25,6 +25,17 @@ struct PlacementContext {
 
 void tickEasyPlace();
 
+enum class ManualTargetStatus {
+    None,
+    MissingMaterial,
+    Ready,
+};
+
+// Fresh synchronous raytrace used by manual-mode hooks. Target detection and
+// inventory availability stay separate so a missing item is never reported as
+// an aiming failure or handed back to vanilla use-item handling.
+ManualTargetStatus manualTargetStatusUnderCrosshair();
+
 void tickRangePlace(LocalPlayer& player, PlacementContext const& context);
 
 } // namespace lholo::place::detail

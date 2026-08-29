@@ -18,6 +18,7 @@
 
 #include "place/PlacementState.h"
 
+#include "block/BlockPlacementRules.h"
 #include "plugin/LHolo.h"
 #include "projection/Projection.h"
 #include "structure/StructureLoader.h"
@@ -44,8 +45,6 @@
 #include "mc/world/inventory/transaction/ItemUseInventoryTransaction.h"
 #include "mc/world/item/ItemInstance.h"
 #include "mc/world/item/ItemStack.h"
-#include "mc/world/item/registry/ItemRegistry.h"
-#include "mc/world/item/registry/ItemRegistryManager.h"
 #include "mc/world/level/BlockPos.h"
 #include "mc/world/level/BlockSource.h"
 #include "mc/world/level/Tick.h"
@@ -154,29 +153,6 @@ struct ItemFind {
     ItemStack const* item;
 };
 
-// Blocks whose placing item has a different name than the block. ItemStack(Block)
-// does not resolve these to the right inventory item (the item was never found),
-// so the item is built from its real name instead.
-char const* placingItemName(std::string const& blockName) {
-    if (blockName == "minecraft:redstone_wire") return "minecraft:redstone";
-    if (blockName == "minecraft:unpowered_comparator" || blockName == "minecraft:powered_comparator")
-        return "minecraft:comparator";
-    if (blockName == "minecraft:unpowered_repeater" || blockName == "minecraft:powered_repeater")
-        return "minecraft:repeater";
-    if (blockName == "minecraft:unlit_redstone_torch") return "minecraft:redstone_torch";
-    return nullptr;
-}
-
-ItemStack makePlacingItem(Block const& block) {
-    char const* const itemName = placingItemName(block.getTypeName());
-    // Construct the inventory form by item name with neutral aux. Constructing
-    // ItemStack directly from an oriented Block copies legacy placement bits
-    // (stairs direction/half, pillar axis, ...), but inventory items do not
-    // carry those world-state bits and therefore never matched.
-    std::string_view const name = itemName ? std::string_view{itemName} : std::string_view{block.getTypeName()};
-    return ItemStack(name, 1, 0, nullptr);
-}
-
 PlacementContext makePlacementContext(Vec3 const& eye, Vec3 const& view, float reach) {
     auto const quantize = [](float value, float scale) {
         return static_cast<int>(std::lround(value * scale));
@@ -225,7 +201,7 @@ void cacheFailedPlan(FailedPlanKey const& key, std::uint64_t now) {
 // redstone item carries no placement state, so the stricter
 // sameItemAndAuxAndBlockData never matched a ghost that does.
 ItemFind findItemSlot(Player& player, Block const& block) {
-    ItemStack const want = makePlacingItem(block);
+    ItemStack const want = block::makePlacementItem(block);
     auto& inventory = player.getInventory();
     for (int slot = 0; slot < kInventorySlots; ++slot) {
         auto const& item = inventory.getItem(slot);
@@ -251,7 +227,7 @@ InventorySnapshot snapshotInventory(Player& player) {
 }
 
 ItemFind findItemSlot(InventorySnapshot const& snapshot, Block const& block) {
-    ItemStack const want = makePlacingItem(block);
+    ItemStack const want = block::makePlacementItem(block);
     auto const [first, last] = snapshot.equal_range(want.getIdAux());
     for (auto it = first; it != last; ++it) {
         if (it->second.item->sameItemAndAux(want)) return it->second;
@@ -276,6 +252,19 @@ void sendInventorySwap(LocalPlayer& player, int fromSlot, int toSlot, ItemStack 
     invTx.addAction(InventoryAction{source, static_cast<uint>(toSlot), toItem, fromItem});
     InventoryTransactionPacket packet(std::move(transaction), true);
     player.getClientInstance().getPacketSender().sendToServer(packet);
+}
+
+// Pick which hotbar slot a backpack item should swap into. Prefer an empty slot
+// so the player's held items are never evicted, and so two materials never
+// thrash through a single slot — each lands in its own empty slot and stays
+// there (next tick it is already in the bar, no further swap). Only when the
+// hotbar is completely full do we fall back to the currently selected slot.
+int chooseHotbarSwapTarget(Player& player) {
+    auto& inventory = player.getInventory();
+    for (int slot = 0; slot < kHotbarSlots; ++slot) {
+        if (inventory.getItem(slot).isNull()) return slot;
+    }
+    return player.getSelectedItemSlot();
 }
 
 // A projected ghost cell the player aims at: the cell itself, the real block
@@ -537,12 +526,24 @@ bool placementPredictionMatches(
     Block const& ghost,
     Block const* expectedDoorUpper = nullptr
 ) {
-    if (predicted.getTypeName() != ghost.getTypeName()) return false;
+    if (block::placeableBaseName(predicted.getTypeName())
+        != block::placeableBaseName(ghost.getTypeName())) return false;
 
     auto const& name = ghost.getTypeName();
     if (name.ends_with("_stairs")) {
         return sameSerializedState(predicted, ghost, "weirdo_direction")
             && sameSerializedState(predicted, ghost, "upside_down_bit");
+    }
+    // A slab's top/bottom half is chosen by the click face and hit height, so it
+    // must be matched explicitly — otherwise a bottom-slab prediction (the first
+    // click candidate) can satisfy a top-slab ghost and place the wrong half.
+    // Newer versions store the half as minecraft:vertical_half, older ones as
+    // top_slot_bit; a double slab has neither and stays on the strict compare.
+    if (ghost.isSlabBlock() && !SlabBlock::isDoubleSlab(ghost)) {
+        if (!serializedState(ghost, "minecraft:vertical_half").empty())
+            return sameSerializedState(predicted, ghost, "minecraft:vertical_half");
+        if (!serializedState(ghost, "top_slot_bit").empty())
+            return sameSerializedState(predicted, ghost, "top_slot_bit");
     }
     if (!serializedState(ghost, "torch_facing_direction").empty()) {
         return sameSerializedState(predicted, ghost, "torch_facing_direction");
@@ -550,18 +551,50 @@ bool placementPredictionMatches(
     if (!serializedState(ghost, "pillar_axis").empty()) {
         return sameSerializedState(predicted, ghost, "pillar_axis");
     }
-    if (expectedDoorUpper) {
-        // A door item places both cells. The lower ghost owns direction/open,
-        // while the upper ghost owns the hinge. Require the official predictor
-        // to expose all of those values; if it cannot, leave the door for manual
-        // placement rather than risking a two-cell wrong result.
-        std::string const expectedHinge = serializedState(*expectedDoorUpper, "door_hinge_bit");
-        return sameSerializedState(predicted, ghost, "upper_block_bit")
-            && sameSerializedState(predicted, ghost, "direction")
-            && sameSerializedState(predicted, ghost, "open_bit")
-            && !expectedHinge.empty()
-            && serializedState(predicted, "door_hinge_bit") == expectedHinge;
+    // Walls, fences, glass panes and iron bars derive every connection state from
+    // their neighbours after placement (nothing is chosen at placement), so accept
+    // the placement on block identity alone — the connections resolve as the
+    // surrounding blocks fill in.
+    // Repeaters and comparators: only facing is chosen at placement (delay/mode
+    // are set by right-clicking afterwards, the powered bit is redstone-driven),
+    // so match on facing alone — including the powered name variants, which reach
+    // here via the shared placeable-base rule. This also lets a delay-adjusted repeater place.
+    if (name == "minecraft:unpowered_repeater" || name == "minecraft:powered_repeater"
+        || name == "minecraft:unpowered_comparator" || name == "minecraft:powered_comparator") {
+        return sameSerializedState(predicted, ghost, "minecraft:cardinal_direction");
     }
+    if (isTwoBlockDoor(ghost)) {
+        // A door item places both cells. The lower ghost owns direction/open,
+        // the upper owns the hinge. Verify direction/open/half always; the hinge
+        // only when the upper half is visible (expectedDoorUpper). A layer cut
+        // hides the upper, leaving the hinge unverifiable — one DoorItem use
+        // still creates both halves, so accept the placement without it.
+        bool matched = sameSerializedState(predicted, ghost, "upper_block_bit")
+            && sameSerializedState(predicted, ghost, "direction")
+            && sameSerializedState(predicted, ghost, "open_bit");
+        if (matched && expectedDoorUpper) {
+            std::string const expectedHinge = serializedState(*expectedDoorUpper, "door_hinge_bit");
+            matched = !expectedHinge.empty()
+                && serializedState(predicted, "door_hinge_bit") == expectedHinge;
+        }
+        return matched;
+    }
+    // A runtime lit/heat variant (lit lamp/ore, burning furnace) is placed as its
+    // base block and switched on by the game afterwards, so the names only matched
+    // after normalization and the runtime id is expected to differ. Accept on
+    // facing where directional (furnaces), otherwise unconditionally (lamp/ore).
+    if (block::placeableBaseName(ghost.getTypeName()) != ghost.getTypeName()) {
+        if (!serializedState(ghost, "facing_direction").empty())
+            return sameSerializedState(predicted, ghost, "facing_direction");
+        if (!serializedState(ghost, "minecraft:cardinal_direction").empty())
+            return sameSerializedState(predicted, ghost, "minecraft:cardinal_direction");
+        return true;
+    }
+    // Bedrock owns neighbour-derived placement-state tolerance (walls, fences,
+    // panes, bars and future equivalents). Keep specialized player-controlled
+    // states above strict, then defer all remaining exceptions to the official
+    // API instead of maintaining block-name suffix lists.
+    if (ghost.allowStateMismatchOnPlacement(predicted)) return true;
     return predicted.getRuntimeId() == ghost.getRuntimeId();
 }
 
@@ -575,23 +608,28 @@ bool resolveOrientedPlacement(
     ProjectionTarget&       out
 ) {
     Block const* expectedDoorUpper = nullptr;
+    bool const   isDoor = isTwoBlockDoor(ghost);
 
-    if (isTwoBlockDoor(ghost)) {
+    if (isDoor) {
         // The upper projected half is never an independent placement target.
         // One DoorItem use on the lower cell creates both halves.
         if (serializedState(ghost, "upper_block_bit") != "0") return false;
         BlockPos const upperCell = cell.neighbor(static_cast<uchar>(Facing::Name::Up));
+        // The upper cell must be free for the door's second half.
+        if (!region.getBlock(upperCell).isAir()) return false;
+        // When the upper half is visible we use its hinge to verify the placement
+        // exactly. When a layer cut hides it, the cell is not in the query-able
+        // virtual world (hasBlock=false) — we still place the door and let the
+        // hinge be best-effort, since one DoorItem use creates both halves anyway.
         auto const upper = projection::queryProjection(player, upperCell);
-        if (!upper.block || !upper.missing || upper.block->getTypeName() != ghost.getTypeName()
-            || serializedState(*upper.block, "upper_block_bit") != "1"
-            || !region.getBlock(upperCell).isAir()) {
-            return false;
+        if (upper.block && upper.missing && upper.block->getTypeName() == ghost.getTypeName()
+            && serializedState(*upper.block, "upper_block_bit") == "1") {
+            expectedDoorUpper = upper.block;
         }
         // DoorBlock::mayPlace is the official two-cell/support validation. It is
         // intentionally used only for doors; treating it as a universal gate
         // previously rejected valid stairs and wall-mounted blocks.
         if (!ghost.mayPlace(region, cell)) return false;
-        expectedDoorUpper = upper.block;
     }
 
     // Only accept a real support and a click point for which the official
@@ -622,12 +660,17 @@ bool resolveOrientedPlacement(
     };
 
     auto const searchCurrentRotation = [&](ProjectionTarget& result) {
-        uchar const firstSupport = expectedDoorUpper ? static_cast<uchar>(Facing::Name::Down) : 0;
-        uchar const supportEnd   = expectedDoorUpper ? firstSupport + 1 : 6;
+        uchar const firstSupport = isDoor ? static_cast<uchar>(Facing::Name::Down) : 0;
+        uchar const supportEnd   = isDoor ? firstSupport + 1 : 6;
         for (uchar sf = firstSupport; sf < supportEnd; ++sf) {
             BlockPos const at = cell.neighbor(sf);
             Block const& support = region.getBlock(at);
-            if (support.isAir() || wouldMergeClickedSlab(ghost, support)) continue;
+            // A matching slab only merges into a double slab when clicked from
+            // below/above; a side slab is a valid support that places into the
+            // target cell, so a slab-next-to-slab must not skip it.
+            bool const verticalSupport = sf == static_cast<uchar>(Facing::Name::Down)
+                || sf == static_cast<uchar>(Facing::Name::Up);
+            if (support.isAir() || (verticalSupport && wouldMergeClickedSlab(ghost, support))) continue;
 
             uchar const face = Facing::getOpposite(sf);
             bool matched = false;
@@ -644,7 +687,13 @@ bool resolveOrientedPlacement(
         // RuntimeId matching still prevents an incorrect placement.
         // DoorItem only accepts a floor-supported lower cell and creates its
         // upper half itself; never use the floating/air-mPos fallback for doors.
-        if (expectedDoorUpper) return false;
+        if (isDoor) return false;
+        // A slab's half follows the click height, but this air-mPos fallback
+        // predicts from the clicked face — the two diverge (a low click for a top
+        // slab passes the predictor yet the server places the bottom half). Slabs
+        // place through a real support above/beside (handled above); skip the
+        // fallback so a wrong-half slab is never sent.
+        if (ghost.isSlabBlock()) return false;
 
         float const cx = static_cast<float>(cell.x);
         float const cy = static_cast<float>(cell.y);
@@ -713,7 +762,7 @@ void tickRangePlaceImpl(LocalPlayer& player, PlacementContext const& placementCo
             // logic in tickEasyPlaceImpl.
             if (now < placementState().nextSwapAt()) continue;
             auto& inventory = player.getInventory();
-            int const hotbarSlot = player.getSelectedItemSlot();
+            int const hotbarSlot = chooseHotbarSwapTarget(player);
             auto const& toItem = inventory.getItem(hotbarSlot);
             sendInventorySwap(player, found.slot, hotbarSlot, *found.item, toItem);
             placementState().setNextSwapAt(now + kSwapRetryMs);
@@ -726,8 +775,6 @@ void tickRangePlaceImpl(LocalPlayer& player, PlacementContext const& placementCo
 }
 
 void tickEasyPlaceImpl() {
-    structure::processPendingMaterialList();
-
     auto client = ll::service::getClientInstance();
     if (!client) {
         updateAimedProjectedBlockName(nullptr);
@@ -851,7 +898,7 @@ void tickEasyPlaceImpl() {
         // lock. The next tick finds the item in the hotbar and places via the
         // single-packet fast path.
         auto& inventory = player->getInventory();
-        int const hotbarSlot = player->getSelectedItemSlot();
+        int const hotbarSlot = chooseHotbarSwapTarget(*player);
         auto const& toItem = inventory.getItem(hotbarSlot);
         sendInventorySwap(*player, found.slot, hotbarSlot, *found.item, toItem);
         placementState().setNextSwapAt(now + kSwapRetryMs);
@@ -868,6 +915,22 @@ void tickEasyPlaceImpl() {
 } // namespace
 
 namespace detail {
+
+ManualTargetStatus manualTargetStatusUnderCrosshair() {
+    auto client = ll::service::getClientInstance();
+    auto* player = client ? client->getLocalPlayer() : nullptr;
+    if (!player) return ManualTargetStatus::None;
+    Vec3 const eye = player->getEyePos();
+    Vec3 const rawDir = player->getViewVector(1.0f);
+    float const length = std::sqrt(rawDir.x * rawDir.x + rawDir.y * rawDir.y + rawDir.z * rawDir.z);
+    if (length <= 0.0f) return ManualTargetStatus::None;
+    Vec3 const dir{rawDir.x / length, rawDir.y / length, rawDir.z / length};
+    auto const target = findProjectionTarget(*player, eye, dir, player->getPickRange());
+    if (!target) return ManualTargetStatus::None;
+    return findItemSlot(*player, *target->block).slot >= 0
+        ? ManualTargetStatus::Ready
+        : ManualTargetStatus::MissingMaterial;
+}
 
 void tickEasyPlace() {
     tickEasyPlaceImpl();

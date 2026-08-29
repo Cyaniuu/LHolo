@@ -60,6 +60,8 @@ LHolo/
 │  │  └─ MemoryOperators.cpp    Windows 客户端内存运算符适配
 │  ├─ app/
 │  │  └─ AppKernel.*            唯一应用入口：启停编排与加载顺序
+│  ├─ block/
+│  │  └─ BlockPlacementRules.*  共享运行态方块身份与“方块→实际放置物品”规则
 │  ├─ settings/
 │  │  └─ SettingsStore.*        config.json 读写与字段映射
 │  ├─ overlay/
@@ -72,6 +74,7 @@ LHolo/
 │  │  │  └─ StructureFormatLoaders.* `.mcstructure`/`.litematic` 解析为 LoadedStructure
 │  │  ├─ java_to_bedrock/       Java 方块状态映射、文本组件与方块实体到 Bedrock 的转换
 │  │  ├─ StructurePaths.*       UTF-8 路径转换
+│  │  ├─ MaterialTracker.*      材料需求聚合、物品标识缓存与游戏线程背包快照
 │  │  ├─ StructureSession.*    结构会话状态（已加载结构、变换/分层、恢复快照、状态文案）
 │  │  ├─ StructureUiState.*     UI 会话状态（GUI、热键、HUD、待处理动作、材料清单）
 │  │  ├─ StructureLoader.cpp    HUD、快捷键事件、加载入口与公开 getter（菜单/GUI 由 MenuController 负责）
@@ -161,6 +164,10 @@ LHolo/
   方块实体由独立转换器生成原生 Bedrock NBT；不得让 Java NBT 字段泄漏到 `projection`。
 - `settings/SettingsStore` 只负责 `config.json` 的读写与字段映射，不持有运行状态；应用到全局状态由
   `StructureLoader` 完成，配置默认值与钳制语义保持不变。
+- `block/BlockPlacementRules` 集中维护运行态方块到可放置基础方块的身份规则，并通过 Bedrock 原生
+  `Block`/`ItemStack` 转换解析实际放置物品；`place`、材料统计和投影纠错不得各自复制名称映射。
+- `structure/MaterialTracker` 只在本地玩家 tick 线程聚合材料需求和扫描背包；材料需求在加载时缓存
+  `itemId`，HUD/菜单关闭且没有消费者时停止刷新，渲染线程只读取 `StructureUiState` 的一致快照。
 - `structure/StructureUiState` 持有 UI/菜单会话状态：GUI 可见性、热键配置与按下状态、HUD 开关、
   待处理偏移/切层/保存与材料清单；atomic、mutex 和容器均不向调用者暴露，交互逻辑仍在
   `StructureLoader`，菜单线程专属的路径输入缓冲和当前页面由 `MenuController` 私有持有。
@@ -763,7 +770,7 @@ LeviLamina Hook：
 mods/LHolo/config/config.json
 ```
 
-当前配置版本：`10`。
+当前配置版本：`11`。
 
 正式持久化字段：
 
@@ -776,6 +783,12 @@ mods/LHolo/config/config.json
 - `structureBoundsEnabled`
 - `placementRadius`
 - `autoPlacementBreakCooldownSeconds`（0～60 秒，默认 10；只控制后续破坏产生的自动放置冷却）
+- `correctionSeeThrough`、`missingSeeThrough`、`projectionSeeThrough`（三类穿透显示开关，默认关闭）
+- `extraBlocksEnabled`（标记投影空气位置上的多余方块，默认关闭）
+- `experimentalConsent`（辅助放置风险提示是否已确认）
+- `materialHudEnabled`、`materialHudPosition`（材料 HUD 开关与四角位置）
+- `toggleManualHotkey`、`toggleEasyHotkey`、`toggleRangeHotkey` 及其修饰键
+- `loadProjectionHotkey`、`closeProjectionHotkey` 及其修饰键
 - HUD 开关、各项显示开关（含 `hudShowProjectedBlockName` 投影方块名称）、位置；读取时兼容旧键
   `hudShowBlockEntity`，保存时只写新键
 - GUI、移动、显示层快捷键与修饰键
