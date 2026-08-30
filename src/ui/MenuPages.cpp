@@ -467,9 +467,6 @@ void renderRenderPage(MenuModel& model, MenuActions const& actions, UiMetrics co
         renderCheckboxRow(
             "##MissingSeeThrough", "未放置标记穿透显示（X 光）", model.missingSeeThrough, metrics
         );
-        renderCheckboxRow(
-            "##ExtraBlocks", "标记多余方块", model.extraBlocksEnabled, metrics
-        );
         if (ImGui::Button("恢复默认纠错样式")) {
             if (actions.resetCorrectionStyle) actions.resetCorrectionStyle();
             model.correctionFillOpacity = 0.15f;
@@ -549,6 +546,9 @@ void renderHudPage(MenuModel& model, UiMetrics const& metrics) {
         );
         renderCheckboxRow("##HudWrongState", "显示朝向错误", model.hudShowWrongState, metrics);
         renderCheckboxRow("##HudWrongType", "显示放置错误", model.hudShowWrongType, metrics);
+        renderCheckboxRow(
+            "##HudExtraBlocks", "显示多余方块", model.hudShowExtraBlocks, metrics
+        );
         ImGui::EndDisabled();
         // The material HUD is independent of the main HUD, so its position stays
         // enabled here; whether it shows is toggled in the material-list popup.
@@ -575,11 +575,14 @@ void renderMaterialPopup(MenuModel const& model, MenuActions const& actions, UiM
     // The material list has a little more breathing room than the regular
     // menu: its table is intentionally 1.5x the original logical footprint.
     constexpr float popupDensity = 1.20f;
+    constexpr float itemColumnWeight = 0.38f;
+    constexpr float typeColumnWeight = 0.42f;
+    constexpr float totalColumnWeight = 0.20f;
     // Measure the actual table content.  A fixed width multiplier makes a
     // seven-row list look like a wide banner and leaves unused space below.
-    auto nameWidth = ImGui::CalcTextSize("名称").x;
+    auto nameWidth = ImGui::CalcTextSize("物品").x;
     auto typeWidth = ImGui::CalcTextSize("标识符").x;
-    auto countWidth = ImGui::CalcTextSize("数量").x;
+    auto countWidth = ImGui::CalcTextSize("总计数量").x;
     for (auto const& item : model.materials) {
         nameWidth = std::max(nameWidth, ImGui::CalcTextSize(item.displayName.c_str()).x);
         typeWidth = std::max(typeWidth, ImGui::CalcTextSize(item.typeName.c_str()).x);
@@ -588,8 +591,11 @@ void renderMaterialPopup(MenuModel const& model, MenuActions const& actions, UiM
     }
     auto const cellPadding = ImGui::GetStyle().CellPadding.x * 2.0f;
     auto const tableWidth = std::max(
-        nameWidth + cellPadding,
-        std::max((typeWidth + cellPadding) / 0.45f, (countWidth + cellPadding) / 0.15f)
+        (nameWidth + cellPadding) / itemColumnWeight,
+        std::max(
+            (typeWidth + cellPadding) / typeColumnWeight,
+            (countWidth + cellPadding) / totalColumnWeight
+        )
     );
     auto const closeWidth = ImGui::CalcTextSize("关闭").x + ImGui::GetStyle().FramePadding.x * 2.0f;
     auto const titleWidth = ImGui::CalcTextSize("材料清单").x + closeWidth + metrics.gap;
@@ -621,7 +627,7 @@ void renderMaterialPopup(MenuModel const& model, MenuActions const& actions, UiM
             kMaterialPopupName,
             nullptr,
             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar
-                | ImGuiWindowFlags_NoSavedSettings
+                | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoSavedSettings
         )) return;
 
     ImGui::TextUnformatted("材料清单");
@@ -660,9 +666,13 @@ void renderMaterialPopup(MenuModel const& model, MenuActions const& actions, UiM
         }
         ImGui::Text("共 %llu 个方块，%zu 种材料", static_cast<unsigned long long>(total), model.materials.size());
         ImGui::Separator();
+        // The popup header and Close button are fixed. Only this child consumes
+        // the wheel; its visual scrollbar stays hidden to match the rest of the
+        // menu, while the non-scrollable parent prevents wheel propagation.
+        auto const materialAreaHeight = std::max(1.0f, ImGui::GetContentRegionAvail().y);
         if (ImGui::BeginChild(
                 "##MaterialList",
-                ImVec2(0.0f, std::max(line, listHeight)),
+                ImVec2(0.0f, materialAreaHeight),
                 false,
                 ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings
             )) {
@@ -673,9 +683,9 @@ void renderMaterialPopup(MenuModel const& model, MenuActions const& actions, UiM
                            ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg
                                | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings
                        )) {
-                ImGui::TableSetupColumn("名称", ImGuiTableColumnFlags_WidthStretch, 0.40f);
-                ImGui::TableSetupColumn("标识符", ImGuiTableColumnFlags_WidthStretch, 0.45f);
-                ImGui::TableSetupColumn("数量", ImGuiTableColumnFlags_WidthStretch, 0.15f);
+                ImGui::TableSetupColumn("物品", ImGuiTableColumnFlags_WidthStretch, itemColumnWeight);
+                ImGui::TableSetupColumn("标识符", ImGuiTableColumnFlags_WidthStretch, typeColumnWeight);
+                ImGui::TableSetupColumn("总计数量", ImGuiTableColumnFlags_WidthStretch, totalColumnWeight);
                 ImGui::TableHeadersRow();
                 auto renderCenteredCell = [&](char const* text) {
                     auto const cellWidth = ImGui::GetContentRegionAvail().x;

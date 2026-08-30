@@ -39,6 +39,25 @@ BlockPos transformStructurePosition(
     int                                             rotation
 );
 
+BlockPos transformStructurePosition(
+    BlockPos const&                           position,
+    structure::LoadedStructure const&         loaded,
+    int                                       mirrorMode,
+    int                                       rotation
+);
+
+BlockPos inverseTransformStructurePosition(
+    BlockPos const&                           position,
+    structure::LoadedStructure const&         loaded,
+    int                                       mirrorMode,
+    int                                       rotation
+);
+
+bool isStructureCellCovered(
+    structure::LoadedStructure const& loaded,
+    BlockPos const&                    position
+);
+
 bool isLayerVisible(int layer, int layerDisplayMode, int displayLayer);
 
 } // namespace lholo::projection::detail

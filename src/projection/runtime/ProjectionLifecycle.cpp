@@ -66,17 +66,17 @@ bool prepareProjectionState(
     state.cachedRotation = -1;
     state.cachedMirror = -1;
 
-    std::map<std::tuple<int, int, int>, std::size_t> sectionLookup;
     std::vector<Vec3> centers;
     state.blockToSection.resize(state.structure->renderBlocks.size());
     for (std::size_t index = 0; index < state.structure->renderBlocks.size(); ++index) {
         auto const& entry = state.structure->renderBlocks[index];
         auto const key = std::tuple{entry.x / 16, entry.y / 16, entry.z / 16};
-        auto [found, inserted] = sectionLookup.try_emplace(
+        auto [found, inserted] = state.localSectionIndices.try_emplace(
             key, state.sectionBlockIndices.size()
         );
         if (inserted) {
             state.sectionBlockIndices.emplace_back();
+            state.localSectionKeys.push_back(key);
             auto const [sx, sy, sz] = key;
             centers.emplace_back(
                 static_cast<float>(sx * 16 + 8),
@@ -94,6 +94,7 @@ bool prepareProjectionState(
     state.wrongOutlineSectionMeshes.resize(state.sectionBlockIndices.size());
     state.liquidProxySectionMeshes.resize(state.sectionBlockIndices.size());
     state.blockEntityPlaceholderSectionMeshes.resize(state.sectionBlockIndices.size());
+    state.sectionExtraBlockPositions.resize(state.sectionBlockIndices.size());
     return resolveTerrainTexture(client, state);
 }
 

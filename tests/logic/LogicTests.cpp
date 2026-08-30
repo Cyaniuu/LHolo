@@ -67,6 +67,32 @@ void testLayoutRules() {
     LHOLO_CHECK(expectBlockPos(transformStructurePosition(entry, loaded, 0, 3), 3, 2, 2));
     LHOLO_CHECK(expectBlockPos(transformStructurePosition(entry, loaded, 1, 1), 1, 2, 2));
 
+    for (int mirror = 0; mirror <= 2; ++mirror) {
+        for (int rotation = 0; rotation < 4; ++rotation) {
+            for (int x = 0; x < loaded.sizeX; ++x) {
+                for (int z = 0; z < loaded.sizeZ; ++z) {
+                    BlockPos const local{x, 1, z};
+                    auto const transformed = transformStructurePosition(
+                        local, loaded, mirror, rotation
+                    );
+                    auto const restored = inverseTransformStructurePosition(
+                        transformed, loaded, mirror, rotation
+                    );
+                    LHOLO_CHECK(expectBlockPos(restored, x, 1, z));
+                }
+            }
+        }
+    }
+
+    loaded.regions = {
+        {0, 0, 0, 2, 3, 2},
+        {3, 0, 3, 1, 1, 2},
+    };
+    LHOLO_CHECK(isStructureCellCovered(loaded, BlockPos{1, 2, 1}));
+    LHOLO_CHECK(isStructureCellCovered(loaded, BlockPos{3, 0, 4}));
+    LHOLO_CHECK(!isStructureCellCovered(loaded, BlockPos{2, 0, 2}));
+    LHOLO_CHECK(!isStructureCellCovered(loaded, BlockPos{4, 0, 4}));
+
     LHOLO_CHECK(isLayerVisible(3, 0, 0));
     LHOLO_CHECK(!isLayerVisible(3, 1, 2));
     LHOLO_CHECK(isLayerVisible(2, 1, 2));
@@ -96,12 +122,13 @@ void testProgress() {
     LHOLO_CHECK(progress.placed == 100);
 
     publishVisibleProgress(60, 80);
-    publishErrorProgress(130, 5);
+    publishErrorProgress(130, 5, 140);
     progress = getPublishedBuildProgress();
     LHOLO_CHECK(progress.visiblePlaced == 60);
     LHOLO_CHECK(progress.visibleTotal == 80);
     LHOLO_CHECK(progress.wrongType == 100);
     LHOLO_CHECK(progress.wrongState == 5);
+    LHOLO_CHECK(progress.extra == 140);
 
     resetPublishedBuildProgress();
     progress = getPublishedBuildProgress();
@@ -121,6 +148,7 @@ void testProgress() {
     LHOLO_CHECK(progress.placed == 0);
     LHOLO_CHECK(progress.wrongType == 0);
     LHOLO_CHECK(progress.wrongState == 0);
+    LHOLO_CHECK(progress.extra == 0);
 }
 
 void testSettingsStore() {
@@ -133,9 +161,9 @@ void testSettingsStore() {
     settings.guiHotkey = 'L';
     settings.guiHotkeyModifiers = 1;
     settings.hudShowProjectedBlockName = false;
+    settings.hudShowExtraBlocks = false;
     settings.autoPlacementBreakCooldownSeconds = 27;
     settings.correctionSeeThrough = true;
-    settings.extraBlocksEnabled = true;
     settings.materialHudEnabled = true;
     settings.materialHudPosition = 3;
     settings.toggleRangeHotkey = 'G';
@@ -157,9 +185,9 @@ void testSettingsStore() {
     LHOLO_CHECK(loaded.guiHotkey == 'L');
     LHOLO_CHECK(loaded.guiHotkeyModifiers == 1);
     LHOLO_CHECK(!loaded.hudShowProjectedBlockName);
+    LHOLO_CHECK(!loaded.hudShowExtraBlocks);
     LHOLO_CHECK(loaded.autoPlacementBreakCooldownSeconds == 27);
     LHOLO_CHECK(loaded.correctionSeeThrough);
-    LHOLO_CHECK(loaded.extraBlocksEnabled);
     LHOLO_CHECK(loaded.materialHudEnabled);
     LHOLO_CHECK(loaded.materialHudPosition == 3);
     LHOLO_CHECK(loaded.toggleRangeHotkey == 'G');
@@ -177,11 +205,11 @@ void testSettingsStore() {
     lholo::settings::Settings migrated;
     LHOLO_CHECK(lholo::settings::loadSettingsFile(path, migrated));
     LHOLO_CHECK(!migrated.hudShowProjectedBlockName);
+    LHOLO_CHECK(migrated.hudShowExtraBlocks);
     LHOLO_CHECK(migrated.autoPlacementBreakCooldownSeconds == 10);
     LHOLO_CHECK(!migrated.correctionSeeThrough);
-    LHOLO_CHECK(!migrated.extraBlocksEnabled);
     LHOLO_CHECK(!migrated.materialHudEnabled);
-    LHOLO_CHECK(migrated.materialHudPosition == 1);
+    LHOLO_CHECK(migrated.materialHudPosition == 3);
     LHOLO_CHECK(migrated.toggleRangeHotkey == 'Y');
 
     lholo::settings::Settings missing;
@@ -408,12 +436,38 @@ void testStructureUiState() {
     LHOLO_CHECK(pending.toggleRange);
     LHOLO_CHECK(pending.settingsSave);
 
+    state.clearMaterials();
+    LHOLO_CHECK(!state.materialListReady());
+    state.requestMaterialList();
+    LHOLO_CHECK(state.consumeMaterialListRequest());
+    LHOLO_CHECK(!state.consumeMaterialListRequest());
     state.replaceMaterialRequirements({{"Stone", "minecraft:stone", "minecraft:stone", 12}});
+    LHOLO_CHECK(state.materialListReady());
+    // Reopening a completed list must not queue another full structure scan.
+    state.requestMaterialList();
+    LHOLO_CHECK(!state.consumeMaterialListRequest());
     auto const materials = state.materialRequirements();
     LHOLO_CHECK(materials.size() == 1);
     LHOLO_CHECK(materials[0].typeName == "minecraft:stone");
     LHOLO_CHECK(materials[0].itemId == "minecraft:stone");
     LHOLO_CHECK(materials[0].count == 12);
+
+    auto hudMaterials = state.materialHudSnapshot();
+    LHOLO_CHECK(!hudMaterials.ready);
+    state.replaceMaterialHudSnapshot(
+        {{"Glass", "minecraft:glass", "minecraft:glass", 5}},
+        {2}
+    );
+    hudMaterials = state.materialHudSnapshot();
+    LHOLO_CHECK(hudMaterials.ready);
+    LHOLO_CHECK(hudMaterials.requirements.size() == 1);
+    LHOLO_CHECK(hudMaterials.requirements[0].count == 5);
+    LHOLO_CHECK(hudMaterials.available.size() == 1);
+    LHOLO_CHECK(hudMaterials.available[0] == 2);
+    // Updating the current-layer HUD must not replace the whole-structure list.
+    LHOLO_CHECK(state.materialRequirements()[0].typeName == "minecraft:stone");
+    state.clearMaterialHud();
+    LHOLO_CHECK(!state.materialHudSnapshot().ready);
 
     state.setExperimentalConsentGiven(true);
     state.setMaterialHudEnabled(true);
@@ -440,9 +494,10 @@ void testStructureUiState() {
     state.resetHotkeys();
     state.resetHotkeyState();
     state.clearMaterials();
+    LHOLO_CHECK(!state.materialListReady());
     state.setExperimentalConsentGiven(false);
     state.setMaterialHudEnabled(false);
-    state.setMaterialHudPosition(1);
+    state.setMaterialHudPosition(3);
     state.setActionHint({}, 0);
     state.applyHud(HudStateSnapshot{});
 }

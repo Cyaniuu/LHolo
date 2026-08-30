@@ -22,10 +22,9 @@ struct Settings {
     bool correctionSeeThrough{false};
     bool missingSeeThrough{false};
     bool projectionSeeThrough{false};
-    bool extraBlocksEnabled{false};
     bool experimentalConsent{false};
     bool materialHudEnabled{false};
-    int materialHudPosition{1};
+    int materialHudPosition{3};
     int placementRadius{4};
     int autoPlacementBreakCooldownSeconds{10};
     bool hudEnabled{true};
@@ -35,6 +34,7 @@ struct Settings {
     bool hudShowProgress{true};
     bool hudShowWrongState{true};
     bool hudShowWrongType{true};
+    bool hudShowExtraBlocks{true};
     bool hudShowProjectedBlockName{true};
     int hudPosition{1};
     int guiHotkey{'M'};

@@ -9,8 +9,14 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
+#include <vector>
 
 class Block;
+
+namespace lholo::structure {
+struct LoadedStructure;
+}
 
 namespace lholo::projection {
 
@@ -21,6 +27,25 @@ struct BuildProgress {
     std::uint64_t visibleTotal{};
     std::uint64_t wrongType{};
     std::uint64_t wrongState{};
+    std::uint64_t extra{};
+};
+
+// Stable public contract for consumers deriving data from projection progress.
+// The session mutex and mutable ProjectionState remain private to projection.
+struct MaterialProgressKey {
+    std::uint64_t structureGeneration{};
+    std::uint64_t progressRevision{};
+    int           layerDisplayMode{};
+    int           displayLayer{};
+    int           layerAxis{};
+
+    bool operator==(MaterialProgressKey const&) const = default;
+};
+
+struct MaterialProgressSnapshot {
+    MaterialProgressKey                         key;
+    std::shared_ptr<structure::LoadedStructure const> structure;
+    std::vector<unsigned char>                  progressCorrect;
 };
 
 // Easy-place support: one locked lookup of the projected virtual world.

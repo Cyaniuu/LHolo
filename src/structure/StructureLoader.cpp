@@ -452,9 +452,11 @@ void renderHud() {
     auto const showProgress = hud.showProgress;
     auto const showWrongState = hud.showWrongState;
     auto const showWrongType = hud.showWrongType;
+    auto const showExtraBlocks = hud.showExtraBlocks;
     auto const showProjectedBlockName = hud.showProjectedBlockName;
     if (!showFileName && !showLayer && !showOverallProgress && !showProgress
-        && !showWrongState && !showWrongType && !showProjectedBlockName) return;
+        && !showWrongState && !showWrongType && !showExtraBlocks
+        && !showProjectedBlockName) return;
 
     auto const sessionSnapshot = detail::StructureSession::getInstance().snapshot();
     if (!sessionSnapshot.loaded) return;
@@ -528,7 +530,8 @@ void renderHud() {
                 layerAxis == 1 ? "X" : "Y"
             );
         }
-        auto const showAnyProgress = showOverallProgress || showProgress || showWrongState || showWrongType;
+        auto const showAnyProgress = showOverallProgress || showProgress || showWrongState
+            || showWrongType || showExtraBlocks;
         projection::BuildProgress progress{};
         if (showAnyProgress) progress = projection::getBuildProgress();
         if (showOverallProgress) {
@@ -545,10 +548,6 @@ void renderHud() {
                 static_cast<unsigned long long>(progress.visibleTotal)
             );
         }
-        auto const aimedProjectedBlock = place::getAimedProjectedBlockName();
-        if (showProjectedBlockName && !aimedProjectedBlock.empty()) {
-            ImGui::Text("投影方块：%s", aimedProjectedBlock.c_str());
-        }
         if (showWrongState && progress.wrongState != 0) {
             ImGui::TextColored(
                 ImVec4(1.0f, 0.62f, 0.18f, 1.0f),
@@ -562,6 +561,17 @@ void renderHud() {
                 "放置错误：%llu",
                 static_cast<unsigned long long>(progress.wrongType)
             );
+        }
+        if (showExtraBlocks && progress.extra != 0) {
+            ImGui::TextColored(
+                ImVec4(1.0f, 0.30f, 0.90f, 1.0f),
+                "多余方块：%llu",
+                static_cast<unsigned long long>(progress.extra)
+            );
+        }
+        auto const aimedProjectedBlock = place::getAimedProjectedBlockName();
+        if (showProjectedBlockName && !aimedProjectedBlock.empty()) {
+            ImGui::Text("投影方块：%s", aimedProjectedBlock.c_str());
         }
         // Record our rect + corner so the material HUD (drawn right after) can
         // stack clear of us when it shares this corner, instead of overlapping.
@@ -580,17 +590,11 @@ void renderMaterialHud() {
     auto const hud = uiState().hud();
     if (!detail::StructureSession::getInstance().hasLoaded()) return;
     // Both vectors come from one locked copy so they stay index-aligned. The
-    // material tracker scans inventory on the game tick thread; this present
-    // thread only reads the completed snapshot.
-    auto const snapshot = uiState().materialSnapshot();
+    // tracker publishes only the current visible layer's missing materials;
+    // this present thread performs no structure or inventory scans.
+    auto const snapshot = uiState().materialHudSnapshot();
     auto const& materials = snapshot.requirements;
     auto const& available = snapshot.available;
-    if (materials.empty()) {
-        // Nothing computed yet for this structure — request a refresh for the
-        // next game tick. The request itself is an atomic store.
-        uiState().requestMaterialList();
-        return;
-    }
 
     struct Row {
         std::string const* name;
@@ -598,14 +602,11 @@ void renderMaterialHud() {
         int                stackSize;
     };
     std::vector<Row> missing;
-    std::uint64_t totalNeed{}, totalMissing{};
     for (std::size_t index = 0; index < materials.size(); ++index) {
         auto const need = materials[index].count;
         auto const have = index < available.size() ? available[index] : 0;
         auto const miss = static_cast<std::uint64_t>(have) >= need
             ? 0ULL : need - static_cast<std::uint64_t>(have);
-        totalNeed += need;
-        totalMissing += miss;
         if (miss > 0) {
             missing.push_back({&materials[index].displayName, miss, materials[index].stackSize});
         }
@@ -652,14 +653,15 @@ void renderMaterialHud() {
         | ImGuiWindowFlags_NoNavFocus
         | ImGuiWindowFlags_NoInputs;
     if (ImGui::Begin("##LHoloMaterialHud", nullptr, flags)) {
-        if (totalMissing == 0) {
-            ImGui::TextColored(ImVec4(0.55f, 0.85f, 0.40f, 1.0f), "材料已备齐 ✓（共 %llu）",
-                static_cast<unsigned long long>(totalNeed));
+        ImGui::TextUnformatted("材料显示");
+        ImGui::Separator();
+        if (!snapshot.ready) {
+            ImGui::TextDisabled("正在统计当前显示范围…");
+        } else if (missing.empty()) {
+            ImGui::TextColored(
+                ImVec4(0.55f, 0.85f, 0.40f, 1.0f), "当前显示范围材料已备齐 ✓"
+            );
         } else {
-            ImGui::Text("材料进度  缺 %llu / 共 %llu",
-                static_cast<unsigned long long>(totalMissing),
-                static_cast<unsigned long long>(totalNeed));
-            ImGui::Separator();
             constexpr std::size_t kMaxRows = 14;
             for (std::size_t index = 0; index < missing.size() && index < kMaxRows; ++index) {
                 auto const& row = missing[index];
@@ -702,7 +704,6 @@ void loadSettings() {
         projection::setCorrectionSeeThrough(settings.correctionSeeThrough);
         projection::setMissingSeeThrough(settings.missingSeeThrough);
         projection::setProjectionSeeThrough(settings.projectionSeeThrough);
-        projection::setExtraBlocksEnabled(settings.extraBlocksEnabled);
         setExperimentalConsentGiven(settings.experimentalConsent);
         setMaterialHudEnabled(settings.materialHudEnabled);
         setMaterialHudPosition(settings.materialHudPosition);
@@ -717,6 +718,7 @@ void loadSettings() {
         hud.showProgress = settings.hudShowProgress;
         hud.showWrongState = settings.hudShowWrongState;
         hud.showWrongType = settings.hudShowWrongType;
+        hud.showExtraBlocks = settings.hudShowExtraBlocks;
         hud.showProjectedBlockName = settings.hudShowProjectedBlockName;
         hud.position = std::clamp(settings.hudPosition, 0, 3);
         uiState().applyHud(hud);
@@ -820,7 +822,6 @@ void saveSettings() {
         settings.correctionSeeThrough = projection::getCorrectionSeeThrough();
         settings.missingSeeThrough = projection::getMissingSeeThrough();
         settings.projectionSeeThrough = projection::getProjectionSeeThrough();
-        settings.extraBlocksEnabled = projection::getExtraBlocksEnabled();
         settings.experimentalConsent = experimentalConsentGiven();
         settings.materialHudEnabled = materialHudEnabled();
         settings.materialHudPosition = materialHudPosition();
@@ -834,6 +835,7 @@ void saveSettings() {
         settings.hudShowProgress = hud.showProgress;
         settings.hudShowWrongState = hud.showWrongState;
         settings.hudShowWrongType = hud.showWrongType;
+        settings.hudShowExtraBlocks = hud.showExtraBlocks;
         settings.hudShowProjectedBlockName = hud.showProjectedBlockName;
         settings.hudPosition = hud.position;
         auto const guiHotkey = uiState().hotkey(kGuiHotkeyIndex);

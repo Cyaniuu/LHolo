@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <map>
 #include <optional>
 #include <set>
 #include <variant>
@@ -63,6 +64,10 @@ struct ProjectionState {
     // One byte per structure block. This is updated by the existing bounded
     // correction scan, so the HUD never performs its own world-block queries.
     std::vector<uchar>              progressCorrect;
+    // Changes whenever the per-cell correctness snapshot changes. Consumers
+    // can use this to rebuild derived data (such as material HUD rows) only
+    // when necessary instead of rescanning the structure every frame.
+    std::uint64_t                   progressRevision{};
     // 0 = no placement error, 1 = wrong block type, 2 = wrong state/direction.
     // Updating one byte and two counters keeps the HUD O(1) per frame.
     std::vector<uchar>              progressErrorKind;
@@ -71,7 +76,10 @@ struct ProjectionState {
     std::uint64_t                   progressVisibleCorrectCount{};
     std::uint64_t                   progressWrongTypeCount{};
     std::uint64_t                   progressWrongStateCount{};
+    std::uint64_t                   progressExtraCount{};
     std::size_t                     correctionScanCursor{};
+    std::size_t                     extraScanRegion{};
+    std::uint64_t                   extraScanCell{};
     std::set<SubChunkKey>           pendingLoadedSubChunks;
     std::vector<BrokenProjectionCell> pendingBrokenCells;
     int                             cachedRotation{-1};
@@ -86,6 +94,14 @@ struct ProjectionState {
     float                           cachedCorrectionFillOpacity{-1.0f};
     float                           cachedCorrectionOutlineOpacity{-1.0f};
     std::vector<std::vector<std::size_t>> sectionBlockIndices;
+    // Extra blocks occupy cells that have no render-block index. The detected
+    // set covers the whole source region for HUD counting; the render set and
+    // per-section sets contain only the current visible range. All stay sparse.
+    std::map<SubChunkKey, std::size_t>    localSectionIndices;
+    std::vector<SubChunkKey>              localSectionKeys;
+    std::set<SubChunkKey>                 detectedExtraBlockPositions;
+    std::set<SubChunkKey>                 extraBlockPositions;
+    std::vector<std::set<SubChunkKey>>    sectionExtraBlockPositions;
     // Correction meshes are split by category so the see-through (X-ray) option
     // can apply to the wrong-type/wrong-state markers only, never to the many
     // "missing" outlines. warningFill/correctionOutline hold the MISSING cells;
@@ -97,11 +113,6 @@ struct ProjectionState {
     std::vector<std::unique_ptr<mce::Mesh>> liquidProxySectionMeshes;
     std::vector<std::unique_ptr<mce::Mesh>> blockEntityPlaceholderSectionMeshes;
     std::unique_ptr<mce::Mesh>              structureBoundsMesh;
-    // "Extra" blocks: real world blocks sitting where the projection is air,
-    // scanned in a small cube around the player and outlined. Built and drawn on
-    // the render thread only; throttled by extraBlockScanAt.
-    std::unique_ptr<mce::Mesh>              extraBlockMesh;
-    std::uint64_t                          extraBlockScanAt{};
     std::vector<SectionState>               sections;
     std::vector<std::size_t>                blockToSection;
     std::size_t                             dirtySectionCursor{};

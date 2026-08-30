@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <optional>
 #include <vector>
 
 #include "projection/ProjectionTypes.h"
@@ -44,11 +45,17 @@ bool getMissingSeeThrough();
 void setMissingSeeThrough(bool enabled);
 bool getProjectionSeeThrough();
 void setProjectionSeeThrough(bool enabled);
-bool getExtraBlocksEnabled();
-void setExtraBlocksEnabled(bool enabled);
 void requestNextStructureAnchor(int x, int y, int z);
 void cancelNextStructureAnchorRequest();
 BuildProgress getBuildProgress();
+// Lightweight version query followed by a conditional snapshot capture. This
+// keeps ProjectionState and its lock private while avoiding a large byte-vector
+// copy when the caller already holds the current version.
+std::optional<MaterialProgressKey> getMaterialProgressKey();
+std::optional<MaterialProgressSnapshot> captureMaterialProgress(
+    MaterialProgressKey const& expected
+);
+bool isLayerVisible(int layer, int layerDisplayMode, int displayLayer);
 std::vector<BrokenProjectionCell> takeBrokenProjectionCells(LocalPlayer& player);
 
 ProjectionQuery queryProjection(LocalPlayer& player, BlockPos const& worldPos);

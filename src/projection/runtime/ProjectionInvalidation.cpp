@@ -112,6 +112,21 @@ ProjectionInvalidationResult reconcileProjectionInvalidation(
     state.cachedCorrectionFillOpacity = settings.correctionFillOpacity;
     state.cachedCorrectionOutlineOpacity = settings.correctionOutlineOpacity;
 
+    if (result.placementViewChanged()) {
+        state.detectedExtraBlockPositions.clear();
+        state.extraBlockPositions.clear();
+        for (auto& positions : state.sectionExtraBlockPositions) positions.clear();
+        state.progressExtraCount = 0;
+        state.extraScanRegion = 0;
+        state.extraScanCell = 0;
+        markAllSectionsDirty(state, false);
+        publishErrorProgress(
+            state.progressWrongTypeCount,
+            state.progressWrongStateCount,
+            0
+        );
+    }
+
     // Rotation/mirror alter local block models, so only those require throwing
     // away every GPU mesh. XYZ movement stays represented by the world matrix.
     if (result.geometryTransformChanged) {
@@ -131,11 +146,13 @@ ProjectionInvalidationResult reconcileProjectionInvalidation(
         for (auto& mesh : state.blockEntityPlaceholderSectionMeshes) mesh.reset();
         state.structureBoundsMesh.reset();
         std::fill(state.progressCorrect.begin(), state.progressCorrect.end(), 0);
+        ++state.progressRevision;
         std::fill(state.progressErrorKind.begin(), state.progressErrorKind.end(), 0);
         state.progressCorrectCount = 0;
         state.progressVisibleCorrectCount = 0;
         state.progressWrongTypeCount = 0;
         state.progressWrongStateCount = 0;
+        state.progressExtraCount = 0;
         resetPublishedBuildProgressCounts();
     }
 

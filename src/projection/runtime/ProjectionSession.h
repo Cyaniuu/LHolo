@@ -67,11 +67,6 @@ public:
     void setMissingSeeThrough(bool enabled);
     [[nodiscard]] bool projectionSeeThrough() const;
     void setProjectionSeeThrough(bool enabled);
-    // Show real world blocks placed where the projection expects air (scanned
-    // near the player). Off by default.
-    [[nodiscard]] bool extraBlocksEnabled() const;
-    void setExtraBlocksEnabled(bool enabled);
-
     [[nodiscard]] std::optional<ProjectionAnchor> consumeAnchor();
     void requestAnchor(int x, int y, int z);
     void cancelAnchorRequest();
@@ -86,7 +81,6 @@ private:
     std::atomic_bool   mCorrectionSeeThrough{false};
     std::atomic_bool   mMissingSeeThrough{false};
     std::atomic_bool   mProjectionSeeThrough{false};
-    std::atomic_bool   mExtraBlocksEnabled{false};
     std::atomic_bool   mPendingAnchor{false};
     std::atomic_int    mPendingAnchorX{0};
     std::atomic_int    mPendingAnchorY{0};

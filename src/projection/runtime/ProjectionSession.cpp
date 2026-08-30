@@ -68,14 +68,6 @@ void ProjectionSession::setProjectionSeeThrough(bool enabled) {
     mProjectionSeeThrough.store(enabled, std::memory_order_relaxed);
 }
 
-bool ProjectionSession::extraBlocksEnabled() const {
-    return mExtraBlocksEnabled.load(std::memory_order_relaxed);
-}
-
-void ProjectionSession::setExtraBlocksEnabled(bool enabled) {
-    mExtraBlocksEnabled.store(enabled, std::memory_order_relaxed);
-}
-
 std::optional<ProjectionAnchor> ProjectionSession::consumeAnchor() {
     if (!mPendingAnchor.exchange(false, std::memory_order_acq_rel)) return std::nullopt;
     return ProjectionAnchor{

@@ -326,6 +326,25 @@ bool shouldSuppressProjectionHitSelect(BlockPos const& pos) {
                         return true;
                     }
                 }
+                BlockPos const transformed{
+                    pos.x - state.anchor.x - state.cachedOffsetX,
+                    pos.y - state.anchor.y - state.cachedOffsetY,
+                    pos.z - state.anchor.z - state.cachedOffsetZ,
+                };
+                auto const local = inverseTransformStructurePosition(
+                    transformed,
+                    *state.structure,
+                    state.cachedMirror,
+                    state.cachedRotation
+                );
+                if (state.extraBlockPositions.contains(
+                        std::tuple{local.x, local.y, local.z}
+                    )) {
+                    // Extra cells use the same correction material as the
+                    // red/yellow markers, so the vanilla coincident selection
+                    // overlay must be suppressed for the same reason.
+                    return true;
+                }
             }
             return false;
         }

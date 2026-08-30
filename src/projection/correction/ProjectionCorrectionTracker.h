@@ -2,8 +2,9 @@
 // Copyright (C) 2026  MarmieQi
 //
 // Bounded real-world comparison for projected cells: initial scan, block and
-// subchunk refreshes, four-state correction, HUD counts and six-neighbor dirty
-// propagation. Mesh generation and HUD publication remain outside this module.
+// subchunk refreshes, four-state projected-cell correction, sparse extra-block
+// detection, HUD counts and six-neighbor dirty propagation. Mesh generation
+// and HUD publication remain outside this module.
 
 #pragma once
 

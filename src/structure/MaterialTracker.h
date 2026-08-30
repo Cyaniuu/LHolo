@@ -12,5 +12,6 @@ namespace lholo::structure::detail {
 void requestMaterialListRefresh();
 void invalidateMaterialList();
 void tickMaterialTracker(LocalPlayer& player);
+void shutdownMaterialTracker();
 
 } // namespace lholo::structure::detail

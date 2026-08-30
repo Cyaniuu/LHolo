@@ -9,6 +9,7 @@
 #include "plugin/LHolo.h"
 #include "projection/ProjectionController.h"
 #include "structure/capture/StructureCapture.h"
+#include "structure/MaterialTracker.h"
 #include "structure/StructureLoader.h"
 
 #include "ll/api/mod/NativeMod.h"
@@ -53,6 +54,7 @@ bool AppKernel::disable() {
     auto& logger = LHolo::getInstance().getSelf().getLogger();
 
     structure::saveSettings();
+    structure::detail::shutdownMaterialTracker();
     projection::detail::projectionController().disableProjection();
     input::uninstallMenuInputGuard();
     place::uninstallHook();

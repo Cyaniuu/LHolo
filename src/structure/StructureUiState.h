@@ -35,13 +35,12 @@ struct ActionHintSnapshot {
     std::uint64_t expiry{};
 };
 
-// Requirements plus the matching held-item counts, copied together under one
-// lock so the HUD always sees the two vectors aligned (available[i] pairs with
-// requirements[i]). `available` is empty until the tick thread has scanned the
-// inventory at least once for the current structure.
-struct MaterialSnapshot {
+// Current-layer missing requirements plus matching inventory counts, copied
+// together so the render thread never observes mismatched vectors.
+struct MaterialHudSnapshot {
     std::vector<MaterialRequirement> requirements;
     std::vector<int>                 available;
+    bool                             ready{};
 };
 
 struct HudStateSnapshot {
@@ -52,6 +51,7 @@ struct HudStateSnapshot {
     bool  showProgress{true};
     bool  showWrongState{true};
     bool  showWrongType{true};
+    bool  showExtraBlocks{true};
     bool  showProjectedBlockName{true};
     int   position{1};
     float uiScale{2.0f};
@@ -151,13 +151,19 @@ public:
 
     void requestMaterialList();
     [[nodiscard]] bool consumeMaterialListRequest();
+    [[nodiscard]] bool materialListReady() const;
     void replaceMaterialRequirements(std::vector<MaterialRequirement> materials);
     [[nodiscard]] std::vector<MaterialRequirement> materialRequirements() const;
-    // Held-item counts aligned to the current requirements, updated from the game
-    // tick thread (safe to touch the inventory / item registry there). The HUD,
-    // which runs on the render thread, reads the snapshot instead of scanning.
-    void setMaterialAvailability(std::vector<int> counts);
-    [[nodiscard]] MaterialSnapshot materialSnapshot() const;
+    // The material-list popup and the current-layer HUD deliberately own
+    // separate snapshots: the popup covers the whole structure, while the HUD
+    // follows projection correction and layer visibility.
+    void replaceMaterialHudSnapshot(
+        std::vector<MaterialRequirement> materials,
+        std::vector<int>                 available
+    );
+    void setMaterialHudAvailability(std::vector<int> counts);
+    [[nodiscard]] MaterialHudSnapshot materialHudSnapshot() const;
+    void clearMaterialHud();
     void clearMaterials();
 
 private:
@@ -184,6 +190,7 @@ private:
     std::atomic_bool  mHudShowProgress{true};
     std::atomic_bool  mHudShowWrongState{true};
     std::atomic_bool  mHudShowWrongType{true};
+    std::atomic_bool  mHudShowExtraBlocks{true};
     std::atomic_bool  mHudShowProjectedBlockName{true};
     std::atomic_int   mHudPosition{1};
     std::atomic<float> mUiScale{2.0f};
@@ -208,7 +215,7 @@ private:
 
     std::atomic_bool mExperimentalConsent{false};
     std::atomic_bool mMaterialHudEnabled{false};
-    std::atomic_int  mMaterialHudPosition{1};
+    std::atomic_int  mMaterialHudPosition{3};
     std::atomic_int  mPendingConsentPopupFeature{0};
     mutable std::mutex mActionHintMutex;
     std::string        mActionHintText;
@@ -216,8 +223,11 @@ private:
 
     mutable std::mutex                mMaterialMutex;
     std::atomic_bool                  mMaterialListRequested{false};
+    std::atomic_bool                  mMaterialListReady{false};
     std::vector<MaterialRequirement>  mMaterialRequirements;
-    std::vector<int>                  mMaterialAvailability;
+    std::vector<MaterialRequirement>  mMaterialHudRequirements;
+    std::vector<int>                  mMaterialHudAvailability;
+    bool                              mMaterialHudReady{};
 };
 
 } // namespace lholo::structure::detail

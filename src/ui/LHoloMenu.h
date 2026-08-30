@@ -84,7 +84,6 @@ struct MenuModel {
     bool correctionSeeThrough{};
     bool missingSeeThrough{};
     bool projectionSeeThrough{};
-    bool extraBlocksEnabled{};
     bool easyPlaceEnabled{};
     bool manualPlace{};
     bool rangeEnabled{};
@@ -116,12 +115,13 @@ struct MenuModel {
     bool hudShowProgress{true};
     bool hudShowWrongState{true};
     bool hudShowWrongType{true};
+    bool hudShowExtraBlocks{true};
     bool hudShowProjectedBlockName{true};
 
     std::vector<MaterialRow> materials;
     bool materialPopupRequested{};
     bool materialHudEnabled{};
-    int  materialHudPosition{1};
+    int  materialHudPosition{3};
     bool closeRequested{};
 };
 

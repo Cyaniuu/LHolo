@@ -29,6 +29,15 @@ class CompoundTag;
 namespace lholo::structure {
 
 struct LoadedStructure {
+    struct RegionBox {
+        int x{};
+        int y{};
+        int z{};
+        int sizeX{};
+        int sizeY{};
+        int sizeZ{};
+    };
+
     std::filesystem::path                 sourcePath;
     int                                  sizeX{};
     int                                  sizeY{};
@@ -38,6 +47,10 @@ struct LoadedStructure {
     std::uint64_t                        secondaryBlocks{};
     std::uint64_t                        paletteEntries{};
     std::uint64_t                        generation{};
+    // Cells covered by the source format. mcstructure contributes one box;
+    // litematic contributes one per region so gaps between regions are not
+    // mistaken for schematic air by projection correction.
+    std::vector<RegionBox>               regions;
     struct RenderBlock {
         int          x{};
         int          y{};
@@ -59,7 +72,7 @@ void resetHotkeyState();
 void processPendingHotkeyActions();
 bool hasHudInfo();
 void renderHud();
-// Material-progress HUD (bottom-left): needed vs. what the inventory holds.
+// Current-visible-range material HUD: missing projected cells vs. inventory.
 void renderMaterialHud();
 // JE-style transient hint shown centered above the hotbar for a moment (e.g.
 // when manual mode blocks an action, or a placement hotkey is toggled).
@@ -77,7 +90,7 @@ void setExperimentalConsentGiven(bool given);
 bool materialHudEnabled();
 void setMaterialHudEnabled(bool enabled);
 // Material HUD corner: 0 top-left, 1 bottom-left, 2 top-right, 3 bottom-right
-// (same encoding as the projection HUD position). Default 1.
+// (same encoding as the projection HUD position). Default 3.
 int  materialHudPosition();
 void setMaterialHudPosition(int position);
 // Ask the menu to jump to the experimental page and open the consent popup (used

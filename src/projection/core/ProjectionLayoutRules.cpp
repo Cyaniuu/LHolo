@@ -53,16 +53,72 @@ BlockPos transformStructurePosition(
     int                                             mirrorMode,
     int                                             rotation
 ) {
-    int x = entry.x;
-    int z = entry.z;
+    return transformStructurePosition(
+        BlockPos{entry.x, entry.y, entry.z}, loaded, mirrorMode, rotation
+    );
+}
+
+BlockPos transformStructurePosition(
+    BlockPos const&                   position,
+    structure::LoadedStructure const& loaded,
+    int                               mirrorMode,
+    int                               rotation
+) {
+    int x = position.x;
+    int z = position.z;
     if (mirrorMode == 1) x = loaded.sizeX - 1 - x;
     if (mirrorMode == 2) z = loaded.sizeZ - 1 - z;
     switch (rotation) {
-    case 1: return BlockPos{loaded.sizeZ - 1 - z, entry.y, x};
-    case 2: return BlockPos{loaded.sizeX - 1 - x, entry.y, loaded.sizeZ - 1 - z};
-    case 3: return BlockPos{z, entry.y, loaded.sizeX - 1 - x};
-    default: return BlockPos{x, entry.y, z};
+    case 1: return BlockPos{loaded.sizeZ - 1 - z, position.y, x};
+    case 2: return BlockPos{loaded.sizeX - 1 - x, position.y, loaded.sizeZ - 1 - z};
+    case 3: return BlockPos{z, position.y, loaded.sizeX - 1 - x};
+    default: return BlockPos{x, position.y, z};
     }
+}
+
+BlockPos inverseTransformStructurePosition(
+    BlockPos const&                   position,
+    structure::LoadedStructure const& loaded,
+    int                               mirrorMode,
+    int                               rotation
+) {
+    int x{};
+    int z{};
+    switch (rotation & 3) {
+    case 1:
+        x = position.z;
+        z = loaded.sizeZ - 1 - position.x;
+        break;
+    case 2:
+        x = loaded.sizeX - 1 - position.x;
+        z = loaded.sizeZ - 1 - position.z;
+        break;
+    case 3:
+        x = loaded.sizeX - 1 - position.z;
+        z = position.x;
+        break;
+    default:
+        x = position.x;
+        z = position.z;
+        break;
+    }
+    if (mirrorMode == 1) x = loaded.sizeX - 1 - x;
+    if (mirrorMode == 2) z = loaded.sizeZ - 1 - z;
+    return BlockPos{x, position.y, z};
+}
+
+bool isStructureCellCovered(
+    structure::LoadedStructure const& loaded,
+    BlockPos const&                    position
+) {
+    for (auto const& region : loaded.regions) {
+        if (position.x >= region.x && position.x < region.x + region.sizeX
+            && position.y >= region.y && position.y < region.y + region.sizeY
+            && position.z >= region.z && position.z < region.z + region.sizeZ) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool isLayerVisible(int layer, int layerDisplayMode, int displayLayer) {

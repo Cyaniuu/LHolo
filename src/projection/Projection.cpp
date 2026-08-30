@@ -16,6 +16,7 @@
 
 #include "projection/Projection.h"
 #include "projection/ProjectionController.h"
+#include "projection/core/ProjectionRules.h"
 #include "projection/runtime/ProjectionProgress.h"
 #include "projection/runtime/ProjectionSession.h"
 #include "projection/runtime/ProjectionLifecycle.h"
@@ -100,14 +101,6 @@ void setProjectionSeeThrough(bool enabled) {
     detail::ProjectionSession::getInstance().setProjectionSeeThrough(enabled);
 }
 
-bool getExtraBlocksEnabled() {
-    return detail::ProjectionSession::getInstance().extraBlocksEnabled();
-}
-
-void setExtraBlocksEnabled(bool enabled) {
-    detail::ProjectionSession::getInstance().setExtraBlocksEnabled(enabled);
-}
-
 void requestNextStructureAnchor(int x, int y, int z) {
     detail::ProjectionSession::getInstance().requestAnchor(x, y, z);
 }
@@ -118,6 +111,49 @@ void cancelNextStructureAnchorRequest() {
 
 BuildProgress getBuildProgress() {
     return detail::getPublishedBuildProgress();
+}
+
+std::optional<MaterialProgressKey> getMaterialProgressKey() {
+    return detail::ProjectionSession::getInstance().withLockedState(
+        [](detail::ProjectionState& state, overlay::BoundsWireframe&)
+            -> std::optional<MaterialProgressKey> {
+            if (!state.enabled || !state.structure
+                || state.cachedLayerDisplayMode < 0 || state.cachedLayerAxis < 0
+                || state.correctionScanCursor != state.structure->renderBlocks.size()) {
+                return std::nullopt;
+            }
+            return MaterialProgressKey{
+                state.structureGeneration,
+                state.progressRevision,
+                state.cachedLayerDisplayMode,
+                state.cachedDisplayLayer,
+                state.cachedLayerAxis,
+            };
+        }
+    );
+}
+
+std::optional<MaterialProgressSnapshot> captureMaterialProgress(
+    MaterialProgressKey const& expected
+) {
+    return detail::ProjectionSession::getInstance().withLockedState(
+        [&expected](detail::ProjectionState& state, overlay::BoundsWireframe&)
+            -> std::optional<MaterialProgressSnapshot> {
+            auto const matches = state.enabled && state.structure
+                && state.correctionScanCursor == state.structure->renderBlocks.size()
+                && state.structureGeneration == expected.structureGeneration
+                && state.progressRevision == expected.progressRevision
+                && state.cachedLayerDisplayMode == expected.layerDisplayMode
+                && state.cachedDisplayLayer == expected.displayLayer
+                && state.cachedLayerAxis == expected.layerAxis;
+            if (!matches) return std::nullopt;
+            return MaterialProgressSnapshot{expected, state.structure, state.progressCorrect};
+        }
+    );
+}
+
+bool isLayerVisible(int layer, int layerDisplayMode, int displayLayer) {
+    return detail::isLayerVisible(layer, layerDisplayMode, displayLayer);
 }
 
 std::vector<BrokenProjectionCell> takeBrokenProjectionCells(LocalPlayer& player) {

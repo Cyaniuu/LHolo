@@ -115,7 +115,6 @@ MenuModel buildStructureMenuModel(float effectiveUiScale) {
     model.correctionSeeThrough = projection::getCorrectionSeeThrough();
     model.missingSeeThrough = projection::getMissingSeeThrough();
     model.projectionSeeThrough = projection::getProjectionSeeThrough();
-    model.extraBlocksEnabled = projection::getExtraBlocksEnabled();
     model.easyPlaceEnabled = place::isEnabled();
     model.manualPlace = place::isManualMode();
     model.rangeEnabled = place::isRangeEnabled();
@@ -145,6 +144,7 @@ MenuModel buildStructureMenuModel(float effectiveUiScale) {
     model.hudShowProgress = hud.showProgress;
     model.hudShowWrongState = hud.showWrongState;
     model.hudShowWrongType = hud.showWrongType;
+    model.hudShowExtraBlocks = hud.showExtraBlocks;
     model.hudShowProjectedBlockName = hud.showProjectedBlockName;
     // Fill rows in definition order (not by enum index) so the menu shows them in
     // that order — keeping 开关范围放置 right under 开关轻松放置 while its enum id
@@ -190,10 +190,6 @@ void applyStructureMenuModel(MenuModel const& model, float effectiveUiScale) {
     }
     if (projection::getProjectionSeeThrough() != model.projectionSeeThrough) {
         projection::setProjectionSeeThrough(model.projectionSeeThrough);
-        changed = true;
-    }
-    if (projection::getExtraBlocksEnabled() != model.extraBlocksEnabled) {
-        projection::setExtraBlocksEnabled(model.extraBlocksEnabled);
         changed = true;
     }
     // Assisted-placement modes are session-only safety controls. Applying a
@@ -247,6 +243,7 @@ void applyStructureMenuModel(MenuModel const& model, float effectiveUiScale) {
     hud.showProgress = model.hudShowProgress;
     hud.showWrongState = model.hudShowWrongState;
     hud.showWrongType = model.hudShowWrongType;
+    hud.showExtraBlocks = model.hudShowExtraBlocks;
     hud.showProjectedBlockName = model.hudShowProjectedBlockName;
     changed = uiState().applyHud(hud) || changed;
     auto const materialPosition = std::clamp(model.materialHudPosition, 0, 3);

@@ -426,6 +426,7 @@ std::shared_ptr<LoadedStructure> loadMcstructure(std::filesystem::path const& pa
     }
     loaded->volume = static_cast<std::uint64_t>(loaded->sizeX)
         * static_cast<std::uint64_t>(loaded->sizeY) * static_cast<std::uint64_t>(loaded->sizeZ);
+    loaded->regions.push_back({0, 0, 0, loaded->sizeX, loaded->sizeY, loaded->sizeZ});
 
     auto const* blockIndices = findList(*structure, "block_indices");
     if (!blockIndices || blockIndices->size() < 2
@@ -665,6 +666,7 @@ std::shared_ptr<LoadedStructure> loadLitematic(std::filesystem::path const& path
     loaded->volume = static_cast<std::uint64_t>(extentX)
         * static_cast<std::uint64_t>(extentY) * static_cast<std::uint64_t>(extentZ);
     loaded->paletteEntries = paletteEntries;
+    loaded->regions.reserve(parsedRegions.size());
     struct MergedJavaCell {
         ResolvedJavaBlock                 block;
         std::shared_ptr<CompoundTag const> blockEntityNbt;
@@ -683,6 +685,14 @@ std::shared_ptr<LoadedStructure> loadLitematic(std::filesystem::path const& path
             - (region.signedY < 0 ? static_cast<std::int64_t>(region.sizeY) - 1 : 0);
         auto const regionMinZ = static_cast<std::int64_t>(region.posZ)
             - (region.signedZ < 0 ? static_cast<std::int64_t>(region.sizeZ) - 1 : 0);
+        loaded->regions.push_back({
+            static_cast<int>(regionMinX - minX),
+            static_cast<int>(regionMinY - minY),
+            static_cast<int>(regionMinZ - minZ),
+            region.sizeX,
+            region.sizeY,
+            region.sizeZ,
+        });
         auto const bits = std::max<unsigned>(
             2u,
             static_cast<unsigned>(std::bit_width(static_cast<unsigned>(region.palette.size() - 1)))

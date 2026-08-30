@@ -25,7 +25,6 @@ bool loadSettingsFile(std::filesystem::path const& path, Settings& out) {
     out.correctionSeeThrough = json.value("correctionSeeThrough", out.correctionSeeThrough);
     out.missingSeeThrough = json.value("missingSeeThrough", out.missingSeeThrough);
     out.projectionSeeThrough = json.value("projectionSeeThrough", out.projectionSeeThrough);
-    out.extraBlocksEnabled = json.value("extraBlocksEnabled", out.extraBlocksEnabled);
     out.experimentalConsent = json.value("experimentalConsent", out.experimentalConsent);
     out.materialHudEnabled = json.value("materialHudEnabled", out.materialHudEnabled);
     out.materialHudPosition = json.value("materialHudPosition", out.materialHudPosition);
@@ -41,6 +40,7 @@ bool loadSettingsFile(std::filesystem::path const& path, Settings& out) {
     out.hudShowProgress = json.value("hudShowProgress", out.hudShowProgress);
     out.hudShowWrongState = json.value("hudShowWrongState", out.hudShowWrongState);
     out.hudShowWrongType = json.value("hudShowWrongType", out.hudShowWrongType);
+    out.hudShowExtraBlocks = json.value("hudShowExtraBlocks", out.hudShowExtraBlocks);
     out.hudShowProjectedBlockName = json.value(
         "hudShowProjectedBlockName",
         json.value("hudShowBlockEntity", out.hudShowProjectedBlockName)
@@ -124,7 +124,6 @@ void saveSettingsFile(std::filesystem::path const& path, Settings const& setting
         {"correctionSeeThrough", settings.correctionSeeThrough},
         {"missingSeeThrough", settings.missingSeeThrough},
         {"projectionSeeThrough", settings.projectionSeeThrough},
-        {"extraBlocksEnabled", settings.extraBlocksEnabled},
         {"experimentalConsent", settings.experimentalConsent},
         {"materialHudEnabled", settings.materialHudEnabled},
         {"materialHudPosition", settings.materialHudPosition},
@@ -137,6 +136,7 @@ void saveSettingsFile(std::filesystem::path const& path, Settings const& setting
         {"hudShowProgress", settings.hudShowProgress},
         {"hudShowWrongState", settings.hudShowWrongState},
         {"hudShowWrongType", settings.hudShowWrongType},
+        {"hudShowExtraBlocks", settings.hudShowExtraBlocks},
         {"hudShowProjectedBlockName", settings.hudShowProjectedBlockName},
         {"hudPosition", settings.hudPosition},
         {"guiHotkey", settings.guiHotkey},

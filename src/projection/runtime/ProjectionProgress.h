@@ -18,7 +18,11 @@ void resetPublishedBuildProgressCounts();
 void publishPlacedProgress(std::uint64_t placed);
 void publishVisiblePlacedProgress(std::uint64_t placed);
 void publishVisibleProgress(std::uint64_t placed, std::uint64_t total);
-void publishErrorProgress(std::uint64_t wrongType, std::uint64_t wrongState);
+void publishErrorProgress(
+    std::uint64_t wrongType,
+    std::uint64_t wrongState,
+    std::uint64_t extra
+);
 
 BuildProgress getPublishedBuildProgress();
 

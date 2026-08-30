@@ -48,6 +48,7 @@ namespace {
 // Litematica's default schematic overlay palette, converted from ARGB to the
 // ABGR byte order expected by Tessellator::colorABGR().
 constexpr std::uint32_t MissingColorAbgrRgb    = 0x00E6B333U; // #33B3E6
+constexpr std::uint32_t ExtraColorAbgrRgb      = 0x00E64CFFU; // #FF4CE6
 constexpr std::uint32_t WrongBlockColorAbgrRgb = 0x003333FFU; // #FF3333
 constexpr std::uint32_t WrongStateColorAbgrRgb = 0x001090FFU; // #FF9010
 
@@ -591,6 +592,7 @@ void buildCorrectionSectionMeshes(
         if (isWrongState(correction)) ++wrongCount;
         else if (correction == CorrectionState::Missing) ++missingCount;
     }
+    wrongCount += state.sectionExtraBlockPositions[section].size();
     if (missingCount == 0 && wrongCount == 0) {
         state.warningFillSectionMeshes[section].reset();
         state.correctionOutlineSectionMeshes[section].reset();
@@ -645,6 +647,29 @@ void buildCorrectionSectionMeshes(
             addOutlineEdge({x0,y0,z0},{x0,y0,z1}); addOutlineEdge({x1,y0,z0},{x1,y0,z1});
             addOutlineEdge({x1,y1,z0},{x1,y1,z1}); addOutlineEdge({x0,y1,z0},{x0,y1,z1});
         }
+        if (wantWrong) {
+            tessellator.colorABGR(static_cast<int>(withAlpha(
+                ExtraColorAbgrRgb, settings.correctionOutlineOpacity
+            )));
+            for (auto const& [x, y, z] : state.sectionExtraBlockPositions[section]) {
+                auto const p = transformStructurePosition(
+                    BlockPos{x, y, z}, *state.structure,
+                    settings.mirrorMode, settings.rotationTurns
+                );
+                float const x0 = static_cast<float>(p.x) + outlineInset;
+                float const y0 = static_cast<float>(p.y) + outlineInset;
+                float const z0 = static_cast<float>(p.z) + outlineInset;
+                float const x1 = static_cast<float>(p.x) + outlineExtent;
+                float const y1 = static_cast<float>(p.y) + outlineExtent;
+                float const z1 = static_cast<float>(p.z) + outlineExtent;
+                addOutlineEdge({x0,y0,z0},{x1,y0,z0}); addOutlineEdge({x1,y0,z0},{x1,y1,z0});
+                addOutlineEdge({x1,y1,z0},{x0,y1,z0}); addOutlineEdge({x0,y1,z0},{x0,y0,z0});
+                addOutlineEdge({x0,y0,z1},{x1,y0,z1}); addOutlineEdge({x1,y0,z1},{x1,y1,z1});
+                addOutlineEdge({x1,y1,z1},{x0,y1,z1}); addOutlineEdge({x0,y1,z1},{x0,y0,z1});
+                addOutlineEdge({x0,y0,z0},{x0,y0,z1}); addOutlineEdge({x1,y0,z0},{x1,y0,z1});
+                addOutlineEdge({x1,y1,z0},{x1,y1,z1}); addOutlineEdge({x0,y1,z0},{x0,y1,z1});
+            }
+        }
         return std::make_unique<mce::Mesh>(tessellator.end(
             uploadMode,
             "LHoloCorrectionOutline",
@@ -670,6 +695,30 @@ void buildCorrectionSectionMeshes(
             static_cast<int>(count * 24),
             false
         );
+        auto const neighborPriority = [&](BlockPos const& p, int dx, int dy, int dz) {
+            BlockPos const worldPosition{
+                state.anchor.x + settings.offsetX + p.x + dx,
+                state.anchor.y + settings.offsetY + p.y + dy,
+                state.anchor.z + settings.offsetZ + p.z + dz
+            };
+            auto const expected = state.expectedWorldBlockIndices->find(std::tuple{
+                worldPosition.x, worldPosition.y, worldPosition.z
+            });
+            auto priority = expected == state.expectedWorldBlockIndices->end()
+                ? 0 : correctionPriority(state.correctionStates[expected->second]);
+            auto const local = inverseTransformStructurePosition(
+                BlockPos{p.x + dx, p.y + dy, p.z + dz},
+                *state.structure,
+                settings.mirrorMode,
+                settings.rotationTurns
+            );
+            if (state.extraBlockPositions.contains(
+                    std::tuple{local.x, local.y, local.z}
+                )) {
+                priority = std::max(priority, 2);
+            }
+            return priority;
+        };
         for (auto const index : state.sectionBlockIndices[section]) {
             auto const correction = state.correctionStates[index];
             auto const priority = correctionPriority(correction);
@@ -680,20 +729,8 @@ void buildCorrectionSectionMeshes(
             auto const p = transformStructurePosition(
                 entry, *state.structure, settings.mirrorMode, settings.rotationTurns
             );
-            BlockPos const worldPosition{
-                state.anchor.x + settings.offsetX + p.x,
-                state.anchor.y + settings.offsetY + p.y,
-                state.anchor.z + settings.offsetZ + p.z
-            };
             // Face-culling stays global across categories so a wrong cell next
             // to a missing cell still hides the lower-priority shared face.
-            auto const neighborPriority = [&](int dx, int dy, int dz) {
-                auto const found = state.expectedWorldBlockIndices->find(std::tuple{
-                    worldPosition.x + dx, worldPosition.y + dy, worldPosition.z + dz
-                });
-                return found == state.expectedWorldBlockIndices->end()
-                    ? 0 : correctionPriority(state.correctionStates[found->second]);
-            };
             float const x0 = static_cast<float>(p.x);
             float const y0 = static_cast<float>(p.y);
             float const z0 = static_cast<float>(p.z);
@@ -706,12 +743,36 @@ void buildCorrectionSectionMeshes(
                     ? withAlpha(WrongStateColorAbgrRgb, settings.correctionFillOpacity)
                     : withAlpha(WrongBlockColorAbgrRgb, settings.correctionFillOpacity);
             tessellator.colorABGR(static_cast<int>(fillColor));
-            if (priority > neighborPriority(0, 0, -1)) addFillFace({x0,y0,z0}, {x0,y1,z0}, {x1,y1,z0}, {x1,y0,z0});
-            if (priority > neighborPriority(0, 0, 1))  addFillFace({x1,y0,z1}, {x1,y1,z1}, {x0,y1,z1}, {x0,y0,z1});
-            if (priority > neighborPriority(-1, 0, 0)) addFillFace({x0,y0,z1}, {x0,y1,z1}, {x0,y1,z0}, {x0,y0,z0});
-            if (priority > neighborPriority(1, 0, 0))  addFillFace({x1,y0,z0}, {x1,y1,z0}, {x1,y1,z1}, {x1,y0,z1});
-            if (priority > neighborPriority(0, -1, 0)) addFillFace({x0,y0,z1}, {x0,y0,z0}, {x1,y0,z0}, {x1,y0,z1});
-            if (priority > neighborPriority(0, 1, 0))  addFillFace({x0,y1,z0}, {x0,y1,z1}, {x1,y1,z1}, {x1,y1,z0});
+            if (priority > neighborPriority(p, 0, 0, -1)) addFillFace({x0,y0,z0}, {x0,y1,z0}, {x1,y1,z0}, {x1,y0,z0});
+            if (priority > neighborPriority(p, 0, 0, 1))  addFillFace({x1,y0,z1}, {x1,y1,z1}, {x0,y1,z1}, {x0,y0,z1});
+            if (priority > neighborPriority(p, -1, 0, 0)) addFillFace({x0,y0,z1}, {x0,y1,z1}, {x0,y1,z0}, {x0,y0,z0});
+            if (priority > neighborPriority(p, 1, 0, 0))  addFillFace({x1,y0,z0}, {x1,y1,z0}, {x1,y1,z1}, {x1,y0,z1});
+            if (priority > neighborPriority(p, 0, -1, 0)) addFillFace({x0,y0,z1}, {x0,y0,z0}, {x1,y0,z0}, {x1,y0,z1});
+            if (priority > neighborPriority(p, 0, 1, 0))  addFillFace({x0,y1,z0}, {x0,y1,z1}, {x1,y1,z1}, {x1,y1,z0});
+        }
+        if (wantWrong) {
+            constexpr int priority = 2;
+            tessellator.colorABGR(static_cast<int>(withAlpha(
+                ExtraColorAbgrRgb, settings.correctionFillOpacity
+            )));
+            for (auto const& [x, y, z] : state.sectionExtraBlockPositions[section]) {
+                auto const p = transformStructurePosition(
+                    BlockPos{x, y, z}, *state.structure,
+                    settings.mirrorMode, settings.rotationTurns
+                );
+                float const x0 = static_cast<float>(p.x);
+                float const y0 = static_cast<float>(p.y);
+                float const z0 = static_cast<float>(p.z);
+                float const x1 = static_cast<float>(p.x + 1);
+                float const y1 = static_cast<float>(p.y + 1);
+                float const z1 = static_cast<float>(p.z + 1);
+                if (priority > neighborPriority(p, 0, 0, -1)) addFillFace({x0,y0,z0}, {x0,y1,z0}, {x1,y1,z0}, {x1,y0,z0});
+                if (priority > neighborPriority(p, 0, 0, 1))  addFillFace({x1,y0,z1}, {x1,y1,z1}, {x0,y1,z1}, {x0,y0,z1});
+                if (priority > neighborPriority(p, -1, 0, 0)) addFillFace({x0,y0,z1}, {x0,y1,z1}, {x0,y1,z0}, {x0,y0,z0});
+                if (priority > neighborPriority(p, 1, 0, 0))  addFillFace({x1,y0,z0}, {x1,y1,z0}, {x1,y1,z1}, {x1,y0,z1});
+                if (priority > neighborPriority(p, 0, -1, 0)) addFillFace({x0,y0,z1}, {x0,y0,z0}, {x1,y0,z0}, {x1,y0,z1});
+                if (priority > neighborPriority(p, 0, 1, 0))  addFillFace({x0,y1,z0}, {x0,y1,z1}, {x1,y1,z1}, {x1,y1,z0});
+            }
         }
         return std::make_unique<mce::Mesh>(tessellator.end(
             uploadMode,

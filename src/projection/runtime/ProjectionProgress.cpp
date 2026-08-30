@@ -14,6 +14,7 @@ std::atomic_uint64_t sVisiblePlaced{0};
 std::atomic_uint64_t sVisibleTotal{0};
 std::atomic_uint64_t sWrongType{0};
 std::atomic_uint64_t sWrongState{0};
+std::atomic_uint64_t sExtra{0};
 
 } // namespace
 
@@ -23,6 +24,7 @@ void resetPublishedBuildProgress() {
     sVisibleTotal.store(0, std::memory_order_relaxed);
     sWrongType.store(0, std::memory_order_relaxed);
     sWrongState.store(0, std::memory_order_relaxed);
+    sExtra.store(0, std::memory_order_relaxed);
     sTotal.store(0, std::memory_order_release);
 }
 
@@ -32,6 +34,7 @@ void initializePublishedBuildProgress(std::uint64_t total) {
     sVisibleTotal.store(total, std::memory_order_relaxed);
     sWrongType.store(0, std::memory_order_relaxed);
     sWrongState.store(0, std::memory_order_relaxed);
+    sExtra.store(0, std::memory_order_relaxed);
     sTotal.store(total, std::memory_order_release);
 }
 
@@ -40,6 +43,7 @@ void resetPublishedBuildProgressCounts() {
     sVisiblePlaced.store(0, std::memory_order_release);
     sWrongType.store(0, std::memory_order_release);
     sWrongState.store(0, std::memory_order_release);
+    sExtra.store(0, std::memory_order_release);
 }
 
 void publishPlacedProgress(std::uint64_t placed) {
@@ -55,9 +59,14 @@ void publishVisibleProgress(std::uint64_t placed, std::uint64_t total) {
     sVisibleTotal.store(total, std::memory_order_release);
 }
 
-void publishErrorProgress(std::uint64_t wrongType, std::uint64_t wrongState) {
+void publishErrorProgress(
+    std::uint64_t wrongType,
+    std::uint64_t wrongState,
+    std::uint64_t extra
+) {
     sWrongType.store(wrongType, std::memory_order_release);
     sWrongState.store(wrongState, std::memory_order_release);
+    sExtra.store(extra, std::memory_order_release);
 }
 
 BuildProgress getPublishedBuildProgress() {
@@ -68,6 +77,7 @@ BuildProgress getPublishedBuildProgress() {
     result.visiblePlaced = sVisiblePlaced.load(std::memory_order_acquire);
     result.wrongType = sWrongType.load(std::memory_order_acquire);
     result.wrongState = sWrongState.load(std::memory_order_acquire);
+    result.extra = sExtra.load(std::memory_order_acquire);
     if (result.placed > result.total) result.placed = result.total;
     if (result.visiblePlaced > result.visibleTotal) result.visiblePlaced = result.visibleTotal;
     if (result.wrongType > result.total) result.wrongType = result.total;

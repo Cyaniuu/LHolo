@@ -109,6 +109,7 @@ HudStateSnapshot StructureUiState::hud() const {
         mHudShowProgress.load(std::memory_order_relaxed),
         mHudShowWrongState.load(std::memory_order_relaxed),
         mHudShowWrongType.load(std::memory_order_relaxed),
+        mHudShowExtraBlocks.load(std::memory_order_relaxed),
         mHudShowProjectedBlockName.load(std::memory_order_relaxed),
         mHudPosition.load(std::memory_order_relaxed),
         mUiScale.load(std::memory_order_relaxed)
@@ -128,6 +129,7 @@ bool StructureUiState::applyHud(HudStateSnapshot const& snapshot) {
     changed = updateRelaxed(mHudShowProgress, snapshot.showProgress) || changed;
     changed = updateRelaxed(mHudShowWrongState, snapshot.showWrongState) || changed;
     changed = updateRelaxed(mHudShowWrongType, snapshot.showWrongType) || changed;
+    changed = updateRelaxed(mHudShowExtraBlocks, snapshot.showExtraBlocks) || changed;
     changed = updateRelaxed(
         mHudShowProjectedBlockName, snapshot.showProjectedBlockName
     ) || changed;
@@ -384,6 +386,9 @@ ActionHintSnapshot StructureUiState::actionHint() const {
 }
 
 void StructureUiState::requestMaterialList() {
+    // A loaded structure has an immutable material bill. Reopening the popup
+    // must reuse that snapshot instead of rescanning a potentially huge file.
+    if (mMaterialListReady.load(std::memory_order_acquire)) return;
     mMaterialListRequested.store(true, std::memory_order_release);
 }
 
@@ -391,12 +396,18 @@ bool StructureUiState::consumeMaterialListRequest() {
     return mMaterialListRequested.exchange(false, std::memory_order_acq_rel);
 }
 
+bool StructureUiState::materialListReady() const {
+    return mMaterialListReady.load(std::memory_order_acquire);
+}
+
 void StructureUiState::replaceMaterialRequirements(std::vector<MaterialRequirement> materials) {
-    std::lock_guard lock(mMaterialMutex);
-    mMaterialRequirements = std::move(materials);
-    // Availability belongs to the previous requirement list; drop it so the HUD
-    // never pairs new requirements with stale counts before the next scan.
-    mMaterialAvailability.clear();
+    {
+        std::lock_guard lock(mMaterialMutex);
+        mMaterialRequirements = std::move(materials);
+    }
+    // Publish readiness only after the complete snapshot is visible. An empty
+    // list is also a valid cached result and must not trigger endless rescans.
+    mMaterialListReady.store(true, std::memory_order_release);
 }
 
 std::vector<MaterialRequirement> StructureUiState::materialRequirements() const {
@@ -404,21 +415,41 @@ std::vector<MaterialRequirement> StructureUiState::materialRequirements() const 
     return mMaterialRequirements;
 }
 
-void StructureUiState::setMaterialAvailability(std::vector<int> counts) {
+void StructureUiState::replaceMaterialHudSnapshot(
+    std::vector<MaterialRequirement> materials,
+    std::vector<int>                 available
+) {
     std::lock_guard lock(mMaterialMutex);
-    mMaterialAvailability = std::move(counts);
+    mMaterialHudRequirements = std::move(materials);
+    mMaterialHudAvailability = std::move(available);
+    mMaterialHudReady = true;
 }
 
-MaterialSnapshot StructureUiState::materialSnapshot() const {
+void StructureUiState::setMaterialHudAvailability(std::vector<int> counts) {
     std::lock_guard lock(mMaterialMutex);
-    return {mMaterialRequirements, mMaterialAvailability};
+    mMaterialHudAvailability = std::move(counts);
+}
+
+MaterialHudSnapshot StructureUiState::materialHudSnapshot() const {
+    std::lock_guard lock(mMaterialMutex);
+    return {mMaterialHudRequirements, mMaterialHudAvailability, mMaterialHudReady};
+}
+
+void StructureUiState::clearMaterialHud() {
+    std::lock_guard lock(mMaterialMutex);
+    mMaterialHudRequirements.clear();
+    mMaterialHudAvailability.clear();
+    mMaterialHudReady = false;
 }
 
 void StructureUiState::clearMaterials() {
     mMaterialListRequested.store(false, std::memory_order_release);
+    mMaterialListReady.store(false, std::memory_order_release);
     std::lock_guard lock(mMaterialMutex);
     mMaterialRequirements.clear();
-    mMaterialAvailability.clear();
+    mMaterialHudRequirements.clear();
+    mMaterialHudAvailability.clear();
+    mMaterialHudReady = false;
 }
 
 } // namespace lholo::structure::detail

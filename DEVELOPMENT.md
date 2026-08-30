@@ -25,12 +25,12 @@ LHolo 的投影、纠错、HUD 和菜单都只存在于客户端，不产生碰�
 - 支持 Y 轴水平分层和 X 轴纵向切片。
 - 显示范围支持“完整结构”“单层”“当前层及以下”“当前层及以上”。
 - 投影透明度 0～100%，默认 100%。
-- 纠错状态：未放置为蓝色、方块类型错误为红色、方向或方块状态错误为黄色、完全正确时隐藏。
+- 纠错状态：未放置为蓝色、方块类型错误为红色、方向或方块状态错误为黄色；蓝图空气位置存在实体方块时以品红色标记为多余方块，完全正确时隐藏。
 - 纠错提示透明度默认 15%，描边透明度默认 100%；均为 0～100 整数输入、即时生效、持久化保存，可一键恢复默认值。
 - 可选整体结构边框。
 - 支持准心轻松放置、按住右键的手动放置，以及半径 1～4 的范围放置；三种模式在 GUI 中互斥。
 - `.mcstructure` 中带 NBT 的方块实体优先使用原版方块实体渲染器；没有可用渲染器或 Tessellation 结果的方块使用贴图占位外壳。
-- HUD 可显示文件名、显示层、建造进度、放置错误数、朝向错误数和准心指向的投影方块名称；支持四角定位和单项关闭，两类错误可分别配置。
+- HUD 可显示文件名、显示层、建造进度、放置错误数、朝向错误数、多余方块数和准心指向的投影方块名称；支持四角定位和单项关闭，各类错误可分别配置。
 - GUI 使用外部注入 Dear ImGui，不使用游戏表单。
 - 默认 `Alt + M` 打开菜单；聊天栏输入 `LHolo`（ASCII 大小写不敏感）也可打开，消息在客户端拦截，不发往服务器。
 - LHolo 菜单打开及关闭过渡期间，客户端阻止本地控制玩家开始或继续破坏方块；本地存档和远程服务器均有效，服务器无需安装 LHolo。
@@ -104,7 +104,7 @@ LHolo/
 │  │  ├─ section/               section 状态结构与初始化
 │  │  │  └─ ProjectionSectionStateStore.* 并行数组合并后的 SectionState 与初始化
 │  │  ├─ correction/            纠错状态机与进度维护
-│  │  │  └─ ProjectionCorrectionTracker.* 有界扫描、事件刷新、四态纠错与六邻居失效
+│  │  │  └─ ProjectionCorrectionTracker.* 有界扫描、事件刷新、非空气四态/稀疏多余方块纠错与六邻居失效
 │  │  ├─ world/                 投影局部世界视图与对外只读查询
 │  │  │  ├─ ProjectionPlacement.* 变换/分层后的虚拟世界与方块实体放置视图
 │  │  │  ├─ ProjectionQueries.* 辅助放置使用的只读单格与范围查询
@@ -166,8 +166,9 @@ LHolo/
   `StructureLoader` 完成，配置默认值与钳制语义保持不变。
 - `block/BlockPlacementRules` 集中维护运行态方块到可放置基础方块的身份规则，并通过 Bedrock 原生
   `Block`/`ItemStack` 转换解析实际放置物品；`place`、材料统计和投影纠错不得各自复制名称映射。
-- `structure/MaterialTracker` 只在本地玩家 tick 线程聚合材料需求和扫描背包；材料需求在加载时缓存
-  `itemId`，HUD/菜单关闭且没有消费者时停止刷新，渲染线程只读取 `StructureUiState` 的一致快照。
+- `structure/MaterialTracker` 只在本地玩家 tick 线程聚合材料需求和扫描背包；同一投影的材料清单只计算
+  一次，先按唯一方块状态累计数量、再解析并缓存 `itemId`，避免大型结构逐格访问物品注册表。HUD/菜单
+  关闭且没有消费者时停止刷新，渲染线程只读取 `StructureUiState` 的一致快照。
 - `structure/StructureUiState` 持有 UI/菜单会话状态：GUI 可见性、热键配置与按下状态、HUD 开关、
   待处理偏移/切层/保存与材料清单；atomic、mutex 和容器均不向调用者暴露，交互逻辑仍在
   `StructureLoader`，菜单线程专属的路径输入缓冲和当前页面由 `MenuController` 私有持有。
@@ -467,13 +468,15 @@ LHolo 不自制草方块、楼梯等材质模型。它使用：
 
 ### 7.1 状态定义
 
-每个结构方块保存一个字节状态：
+每个结构非空气方块保存一个字节状态：
 
 - `Unknown`：尚未扫描。
 - `Missing`：世界方块为空气，蓝色提示。
 - `Correct`：类型和完整方块状态相同，不显示投影或纠错。
 - `WrongType`：类型名不同，红色提示。
 - `WrongState`：类型相同但完整状态不同，黄色提示。
+
+蓝图覆盖范围内的空气格不进入上述数组；真实世界主方块层存在非空气方块时，以局部坐标稀疏记录为 `Extra`（多余方块），使用品红色 `#FF4CE6`。计数覆盖完整结构，纠错网格只保存并绘制当前显示范围。真实世界只有液体层时默认忽略，与 Litematica 的默认语义一致。`.litematic` 保留各 Region 的覆盖盒，Region 之间的空隙不属于蓝图，禁止误报为多余方块。
 
 判定顺序：空气 → 类型名 → 完整 `Block` 相等 → 状态错误。这个顺序不能交换，否则空气可能被算成普通类型错误，方向错误也可能被吞掉。
 
@@ -487,7 +490,7 @@ LHolo 不自制草方块、楼梯等材质模型。它使用：
 
 - 使用精确 1×1×1 单元外壳，不跟随栅栏、玻璃板等非完整碰撞模型。
 - 相邻纠错单元通过优先级和邻居检查剔除内部共享面，避免同一平面绘制两次。
-- 优先级：类型错误 > 状态错误 > 未放置。
+- 优先级：类型错误 > 状态错误 > 多余方块 > 未放置。
 - RGB 使用固定 Litematica 风格色；alpha 由“纠错提示透明度”动态写入顶点色。
 - 默认 alpha 15%，范围 0～100%。
 
@@ -500,9 +503,9 @@ LHolo 不自制草方块、楼梯等材质模型。它使用：
 
 ### 7.5 准心选中闪烁修复
 
-Minecraft 会对准心选中的真实方块额外绘制 hit-select overlay。若该位置同时为红/黄纠错，第二个共面 overlay 会只在选中时出现并闪烁。
+Minecraft 会对准心选中的真实方块额外绘制 hit-select overlay。若该位置同时为红/黄/品红纠错，第二个共面 overlay 会只在选中时出现并闪烁。
 
-`LevelRendererPlayer::renderHitSelect` Hook 在目标坐标对应 `WrongType` 或 `WrongState` 时跳过原版 overlay。其他方块和未放置位置继续调用原函数。新版本适配必须验证该 Hook 签名和坐标语义。
+`LevelRendererPlayer::renderHitSelect` Hook 在目标坐标对应 `WrongType`、`WrongState` 或稀疏 `Extra` 时跳过原版 overlay。其他方块和未放置位置继续调用原函数。新版本适配必须验证该 Hook 签名和坐标语义。
 
 ---
 
@@ -513,6 +516,7 @@ Minecraft 会对准心选中的真实方块额外绘制 hit-select overlay。若
 结构按局部 `(x/16, y/16, z/16)` 分区。每个分区保存：
 
 - 方块索引列表。
+- 稀疏多余方块坐标。
 - 四种投影渲染桶网格。
 - 纠错面网格。
 - 纠错描边网格。
@@ -527,7 +531,7 @@ dirty 分区的 `BlockTessellator` 和全部 CPU 几何生成不在 `$renderBloc
 
 - 一个分区最多一个 in-flight Task；连续变化只递增 revision，旧结果不会覆盖新状态。
 - 增量方块变化优先于初次加载，二者内部都按分区中心到相机距离由近到远选择。
-- 主线程用 `ChunkViewSource::move(..., DontGenerateOnlyGet, ...)` 固定分区加两格 halo 的局部视图。投影虚拟方块/方块实体/世界坐标索引表按 placement generation 发布为共享不可变版本：移动、旋转、镜像或切层时新建一组 Map，in-flight Task 通过 `shared_ptr` 保活旧版本，禁止原地清空或修改已发布版本。Task 只复制会增量变化的纠错字节、方块实体渲染可用性与本 section 索引，不再扫描/拷贝 halo Map，也不再为每个 Task 构造紧凑 `LoadedStructure`。
+- 主线程用 `ChunkViewSource::move(..., DontGenerateOnlyGet, ...)` 固定分区加两格 halo 的局部视图。投影虚拟方块/方块实体/世界坐标索引表按 placement generation 发布为共享不可变版本：移动、旋转、镜像或切层时新建一组 Map，in-flight Task 通过 `shared_ptr` 保活旧版本，禁止原地清空或修改已发布版本。Task 只复制会增量变化的纠错字节、方块实体渲染可用性、本 section 索引，以及当前/六邻居 section 的稀疏多余方块坐标；不复制完整多余方块集合，不再扫描/拷贝 halo Map，也不再为每个 Task 构造紧凑 `LoadedStructure`。
 - Worker 独占 `BlockSource`、`BlockTessellator` 和 `Tessellator`，不读取 `gState`、`renderContext` 或渲染线程的活动 Tessellator。
 - Worker 必须用 `Tessellator::end(UploadMode::Never, ...)` 生成 CPU `mce::MeshData`；禁止在 Worker 使用 `Buffered` 或触碰 GPU。
 - `UploadMode::Never` 返回的 CPU-only `mce::Mesh` 尚未设置上传态 vertex count，因此 Worker 不能用 `Mesh::getMeshVertexCount()` 校验结果（该值在 1.26.20.04 实测为 0）。CPU 阶段以 `MeshData::mPositions.size()` 为权威顶点数，并检查所有非空顶点属性数组与它一致。
@@ -542,7 +546,7 @@ Worker 初始化失败，或构建/上传连续失败三次后，本次游戏会
 
 ### 8.3 有界纠错扫描
 
-`kCorrectionChecksPerFrame = 4096`，按 round-robin cursor 扫描。无论结构多大，每个渲染帧查询上限固定，避免全结构每帧扫描。
+`kCorrectionChecksPerFrame = 4096`。非空气方块纠错和蓝图空气格的多余方块发现共享同一预算；后者只扫描源格式实际覆盖的 Region。无论结构多大，每个渲染帧处理上限固定，避免全结构每帧扫描。
 
 注意：该常量控制“纠错响应速度 vs 单帧 CPU 成本”。适配新版本时必须实测后调整，不要根据理论 FPS 盲目增大。建议记录：
 
@@ -550,7 +554,7 @@ Worker 初始化失败，或构建/上传连续失败三次后，本次游戏会
 - 放置/拆除方块后提示更新延迟。
 - 普通渲染和灵动视效的 CPU/GPU 占用。
 
-初次扫描完成后，稳定世界依靠 `BlockSourceListener` 的方块变化通知更新相关坐标；新加载 subchunk 只刷新其中投影坐标。每帧读取预算仍受上限约束，不允许恢复全结构稳定帧扫描。
+初次扫描完成后，稳定世界依靠 `BlockSourceListener` 的方块变化通知更新相关坐标；新加载 subchunk 刷新其中的投影方块和蓝图覆盖空气格。稳定帧不循环扫描完整结构。
 
 ### 8.4 增量失效
 
@@ -568,9 +572,23 @@ Worker 初始化失败，或构建/上传连续失败三次后，本次游戏会
 - `progressCorrect` 与正确计数。
 - `progressErrorKind`：每个结构坐标使用一个字节记录无错误、类型错误或状态/朝向错误。
 - `progressWrongTypeCount` 与 `progressWrongStateCount` 两个独立计数。
-- 原子发布的 `placed/total/wrongType/wrongState`。
+- 稀疏 `progressExtraCount`，不改变建造进度分母，也不进入材料需求。
+- 原子发布的 `placed/total/wrongType/wrongState/extra`。
 
 HUD 每帧只读取原子计数，不查询世界、不遍历结构。
+
+材料显示 HUD 也不单独查询世界：`ProjectionState::progressCorrect` 每次变化时递增
+`progressRevision`，`MaterialTracker` 只在结构、纠错版本或显示层设置变化后复制一次纠错字节快照。
+版本查询和快照复制必须通过 `Projection.h` 的 `getMaterialProgressKey()` /
+`captureMaterialProgress()` 门面完成；`structure` 模块不得包含 `ProjectionSession.h`、获取投影锁或读取
+`ProjectionState` 内部字段。
+后台任务只用不透明的 `Block const*` 作为键，统计当前显示范围内未正确放置单元；物品注册表、
+本地化和背包读取仍在游戏 tick 线程执行，且每个唯一方块状态只解析一次。同时最多一个统计任务，活跃建造时最多
+每 400 ms 重算一次；结果发布前再校验全部版本键，过期结果直接丢弃。卸载模组时由 `AppKernel` 先回收该任务，
+再释放投影和结构。材料清单与材料 HUD 使用独立 UI 快照：前者只在用户打开清单时统计整张蓝图，
+后者为当前显示范围，开启 HUD 不得隐式触发整图清单计算，两者也不得相互覆盖。
+异步重算期间继续显示上一份完整 HUD 快照；新结果完成后，在 tick 线程立即计算对应背包数量，
+并在同一个 UI 锁内一次性发布材料和库存向量。禁止在提交任务时清空旧快照，也禁止分两次发布两个向量，否则 HUD 会闪烁或短暂显示错误缺口。
 
 ### 8.6 透明排序
 
@@ -784,9 +802,8 @@ mods/LHolo/config/config.json
 - `placementRadius`
 - `autoPlacementBreakCooldownSeconds`（0～60 秒，默认 10；只控制后续破坏产生的自动放置冷却）
 - `correctionSeeThrough`、`missingSeeThrough`、`projectionSeeThrough`（三类穿透显示开关，默认关闭）
-- `extraBlocksEnabled`（标记投影空气位置上的多余方块，默认关闭）
 - `experimentalConsent`（辅助放置风险提示是否已确认）
-- `materialHudEnabled`、`materialHudPosition`（材料 HUD 开关与四角位置）
+- `materialHudEnabled`、`materialHudPosition`（材料 HUD 开关与四角位置，新配置默认右下角）
 - `toggleManualHotkey`、`toggleEasyHotkey`、`toggleRangeHotkey` 及其修饰键
 - `loadProjectionHotkey`、`closeProjectionHotkey` 及其修饰键
 - HUD 开关、各项显示开关（含 `hudShowProjectedBlockName` 投影方块名称）、位置；读取时兼容旧键

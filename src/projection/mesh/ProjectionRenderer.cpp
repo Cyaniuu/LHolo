@@ -353,19 +353,6 @@ void submitProjectionMeshPass(
         renderOverlayMeshes(state.correctionOutlineSectionMeshes, outlineMaterial, missingSeeThrough);
         renderOverlayMeshes(state.wrongOutlineSectionMeshes, outlineMaterial, correctionSeeThrough);
     }
-    // Extra blocks (real blocks where the projection is air): a single outline
-    // mesh built near the player, depth-tested, drawn only while its toggle is on
-    // (the builder resets the mesh to null when disabled).
-    if (outlineMaterial && state.extraBlockMesh && state.extraBlockMesh->isValid()) {
-        state.extraBlockMesh->renderMesh(
-            renderContext.getScreenContext(),
-            outlineMaterial,
-            0,
-            static_cast<uint>(state.extraBlockMesh->getMeshVertexCount()),
-            renderContext.mOffscreenCaptureDescription.get(),
-            nullptr
-        );
-    }
 }
 
 } // namespace lholo::projection::detail

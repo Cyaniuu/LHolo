@@ -150,6 +150,32 @@ void scheduleProjectionMeshBuild(
         maximum.y = std::max(maximum.y, world.y);
         maximum.z = std::max(maximum.z, world.z);
     }
+    for (auto const& [x, y, z] : state.sectionExtraBlockPositions[section]) {
+        auto const local = transformStructurePosition(
+            BlockPos{x, y, z}, *state.structure, settings.mirrorMode, settings.rotationTurns
+        );
+        BlockPos const world{
+            state.anchor.x + settings.offsetX + local.x,
+            state.anchor.y + settings.offsetY + local.y,
+            state.anchor.z + settings.offsetZ + local.z
+        };
+        minimum.x = std::min(minimum.x, world.x);
+        minimum.y = std::min(minimum.y, world.y);
+        minimum.z = std::min(minimum.z, world.z);
+        maximum.x = std::max(maximum.x, world.x);
+        maximum.y = std::max(maximum.y, world.y);
+        maximum.z = std::max(maximum.z, world.z);
+    }
+    if (minimum.x == INT_MAX) {
+        auto const& center = state.sections[section].center;
+        BlockPos const world{
+            state.anchor.x + settings.offsetX + static_cast<int>(center.x),
+            state.anchor.y + settings.offsetY + static_cast<int>(center.y),
+            state.anchor.z + settings.offsetZ + static_cast<int>(center.z),
+        };
+        minimum = world;
+        maximum = world;
+    }
     minimum = BlockPos{minimum.x - 2, minimum.y - 2, minimum.z - 2};
     maximum = BlockPos{maximum.x + 2, maximum.y + 2, maximum.z + 2};
 
@@ -164,6 +190,23 @@ void scheduleProjectionMeshBuild(
     snapshot->correctionStates = state.correctionStates;
     snapshot->blockActorRendererAvailable = state.blockActorRendererAvailable;
     snapshot->sectionBlockIndices = {state.sectionBlockIndices[section]};
+    snapshot->sectionExtraBlockPositions = {state.sectionExtraBlockPositions[section]};
+    // Correction face culling only needs extras in this section and its six
+    // direct neighbors. Avoid copying the complete sparse set for every async
+    // section build on large projections.
+    auto const [sectionX, sectionY, sectionZ] = state.localSectionKeys[section];
+    constexpr int neighborSections[7][3] = {
+        {0, 0, 0}, {-1, 0, 0}, {1, 0, 0}, {0, -1, 0},
+        {0, 1, 0}, {0, 0, -1}, {0, 0, 1}
+    };
+    for (auto const& delta : neighborSections) {
+        auto const found = state.localSectionIndices.find(std::tuple{
+            sectionX + delta[0], sectionY + delta[1], sectionZ + delta[2]
+        });
+        if (found == state.localSectionIndices.end()) continue;
+        auto const& positions = state.sectionExtraBlockPositions[found->second];
+        snapshot->extraBlockPositions.insert(positions.begin(), positions.end());
+    }
     snapshot->expectedWorldBlocks = state.expectedWorldBlocks;
     snapshot->expectedWorldBlockActors = state.expectedWorldBlockActors;
     snapshot->expectedWorldBlockIndices = state.expectedWorldBlockIndices;
