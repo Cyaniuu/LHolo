@@ -68,7 +68,7 @@ void renderMenu(MenuModel& model, MenuActions const& actions, UiMetrics const& m
             if (model.materialPopupRequested) ImGui::OpenPopup(kMaterialPopupName);
             // Both opening and rendering happen in this page child. Dear
             // ImGui popup IDs are scoped to the current window.
-            renderMaterialPopup(model, actions, metrics);
+            renderMaterialPopup(model, metrics);
         }
         ImGui::EndChild();
     }

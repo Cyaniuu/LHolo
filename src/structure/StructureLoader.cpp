@@ -597,7 +597,7 @@ void renderMaterialHud() {
         | ImGuiWindowFlags_NoNavFocus
         | ImGuiWindowFlags_NoInputs;
     if (ImGui::Begin("##LHoloMaterialHud", nullptr, flags)) {
-        ImGui::TextUnformatted("材料显示");
+        ImGui::TextUnformatted("缺失材料");
         ImGui::Separator();
         if (!snapshot.ready) {
             ImGui::TextDisabled("正在统计当前显示范围…");

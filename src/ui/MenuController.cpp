@@ -226,6 +226,10 @@ void applyStructureMenuModel(MenuModel const& model, float effectiveUiScale) {
     hud.showExtraBlocks = model.hudShowExtraBlocks;
     hud.showProjectedBlockName = model.hudShowProjectedBlockName;
     changed = uiState().applyHud(hud) || changed;
+    if (structure::materialHudEnabled() != model.materialHudEnabled) {
+        structure::setMaterialHudEnabled(model.materialHudEnabled);
+        changed = true;
+    }
     auto const materialPosition = std::clamp(model.materialHudPosition, 0, 3);
     if (structure::materialHudPosition() != materialPosition) {
         structure::setMaterialHudPosition(materialPosition);
@@ -298,10 +302,6 @@ MenuActions buildStructureMenuActions(bool& refreshModel) {
         refreshModel = true;
     };
     actions.requestMaterials = [] { structure::requestMaterialList(); };
-    actions.setMaterialHudEnabled = [](bool enabled) {
-        structure::setMaterialHudEnabled(enabled);
-        structure::saveSettings();
-    };
     actions.beginHotkeyCapture = [](HotkeyId id) {
         uiState().beginHotkeyCapture(static_cast<std::size_t>(id));
     };

@@ -572,15 +572,16 @@ void renderHudPage(MenuModel& model, UiMetrics const& metrics) {
             "##HudExtraBlocks", "显示多余方块", model.hudShowExtraBlocks, metrics
         );
         ImGui::EndDisabled();
-        // The material HUD is independent of the main HUD, so its position stays
-        // enabled here; whether it shows is toggled in the material-list popup.
         ImGui::Separator();
-        renderValueRow("材料HUD 位置", metrics, [&] {
+        renderCheckboxRow(
+            "##MaterialHudEnabled", "显示缺失材料", model.materialHudEnabled, metrics
+        );
+        ImGui::BeginDisabled(!model.materialHudEnabled);
+        renderValueRow("缺失材料位置", metrics, [&] {
             ImGui::SetNextItemWidth(adaptiveComboWidth(positions, 4));
             ImGui::Combo("##MaterialHudPosition", &model.materialHudPosition, positions, 4);
         });
-        ImGui::TextDisabled("材料HUD 在「材料清单」里开启显示");
-        ImGui::TextDisabled("HUD 仅在关闭投影菜单后显示");
+        ImGui::EndDisabled();
     });
 }
 
@@ -593,7 +594,7 @@ void renderUiScalePage(MenuModel& model, UiMetrics const& metrics) {
     });
 }
 
-void renderMaterialPopup(MenuModel const& model, MenuActions const& actions, UiMetrics const& metrics) {
+void renderMaterialPopup(MenuModel const& model, UiMetrics const& metrics) {
     // The material list has a little more breathing room than the regular
     // menu: its table is intentionally 1.5x the original logical footprint.
     constexpr float popupDensity = 1.20f;
@@ -660,19 +661,6 @@ void renderMaterialPopup(MenuModel const& model, MenuActions const& actions, UiM
     ));
     if (ImGui::Button("关闭")) ImGui::CloseCurrentPopup();
     ImGui::Separator();
-    ImGui::Dummy(ImVec2(0.0f, metrics.gap * 0.35f));
-
-    // Opt-in toggle for the on-screen material-progress HUD. The corner note
-    // follows the position chosen in the HUD settings page. A fixed ### id keeps
-    // the checkbox state stable while the visible label changes.
-    static char const* const cornerNames[]{"左上角", "左下角", "右上角", "右下角"};
-    auto const corner = cornerNames[std::clamp(model.materialHudPosition, 0, 3)];
-    auto const materialHudLabel =
-        std::string("在屏幕上显示材料HUD（") + corner + "）###MaterialHudToggle";
-    bool materialHud = model.materialHudEnabled;
-    if (ImGui::Checkbox(materialHudLabel.c_str(), &materialHud)) {
-        if (actions.setMaterialHudEnabled) actions.setMaterialHudEnabled(materialHud);
-    }
     ImGui::Dummy(ImVec2(0.0f, metrics.gap * 0.35f));
 
     if (!model.hasLoadedStructure) {

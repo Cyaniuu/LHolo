@@ -94,7 +94,7 @@ bool actionHintActive();
 // flagged as cheating by server anti-cheat). Persisted once acknowledged.
 bool experimentalConsentGiven();
 void setExperimentalConsentGiven(bool given);
-// Opt-in on-screen material-progress HUD, toggled from the material-list popup
+// Opt-in on-screen material-progress HUD, configured on the HUD settings page
 // (default off). Independent of the main projection HUD toggle.
 bool materialHudEnabled();
 void setMaterialHudEnabled(bool enabled);

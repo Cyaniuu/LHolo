@@ -25,6 +25,6 @@ void renderRenderPage(MenuModel& model, MenuActions const& actions, UiMetrics co
 void renderHotkeysPage(MenuModel& model, MenuActions const& actions, UiMetrics const& metrics);
 void renderHudPage(MenuModel& model, UiMetrics const& metrics);
 void renderUiScalePage(MenuModel& model, UiMetrics const& metrics);
-void renderMaterialPopup(MenuModel const& model, MenuActions const& actions, UiMetrics const& metrics);
+void renderMaterialPopup(MenuModel const& model, UiMetrics const& metrics);
 
 } // namespace lholo::ui

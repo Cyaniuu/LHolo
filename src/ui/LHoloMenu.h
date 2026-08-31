@@ -125,7 +125,6 @@ struct MenuActions {
     std::function<void()> restoreProjection;
     std::function<void()> closeProjection;
     std::function<void()> requestMaterials;
-    std::function<void(bool)> setMaterialHudEnabled;
     std::function<void(HotkeyId)> beginHotkeyCapture;
     std::function<void(HotkeyId)> clearHotkey;
     std::function<void()> resetHotkeys;
