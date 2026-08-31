@@ -655,7 +655,7 @@ WndProc/Raw Input 只覆盖 Windows 消息边界，不能作为阻止 Minecraft 
 
 ---
 
-## 10. ImGui 图形链与 F11 生命周期
+## 10. ImGui 图形链与交换链生命周期
 
 ### 10.1 Hook 列表
 
@@ -664,6 +664,7 @@ WndProc/Raw Input 只覆盖 Windows 消息边界，不能作为阻止 Minecraft 
 - `IDXGISwapChain::Present`
 - `IDXGISwapChain1::Present1`
 - `IDXGISwapChain::ResizeBuffers`
+- `IDXGISwapChain3::ResizeBuffers1`
 - `ID3D12CommandQueue::ExecuteCommandLists`
 - 游戏窗口 WndProc
 
@@ -683,11 +684,13 @@ WndProc/Raw Input 只覆盖 Windows 消息边界，不能作为阻止 Minecraft 
 
 不跨帧持有 back buffer wrapper。GUI/HUD 都不显示时跳过这条提交路径。
 
-### 10.3 F11 崩溃根因
+### 10.3 历史崩溃根因
 
 历史崩溃条件：只要初始化过 ImGui，之后 F11 切换全屏就以 `0xC0000409`/`std::terminate` 结束。IDA 与日志表明进入 Minecraft 的 device-lost 处理链，而不是普通输入异常。
 
 根因是 Minecraft 开始全屏/交换链转换时，外部 D3D11On12 后端仍持有旧图形状态。仅在 `ResizeBuffers` 释放 RTV 已经太晚。
+
+窗口大小调整还有一条相同性质的历史路径：菜单绘制过一次后，ImGui 已创建 DX11 device objects；旧实现只 Hook 了 `IDXGISwapChain::ResizeBuffers`，但 Minecraft 的 D3D12 交换链使用 `IDXGISwapChain3::ResizeBuffers1` 调整窗口大小，导致 LHolo 完全错过实际缩放入口，D3D11On12 device/context 跨越旧、新 back buffer 生命周期，Minecraft 会以 `0xC0000409` 结束进程。
 
 ### 10.4 正确修复
 
@@ -701,7 +704,11 @@ WndProc 收到首次 `WM_KEYDOWN + VK_F11`，在消息交回 Minecraft 前：
 6. 延迟约 750 ms，允许 Minecraft 完成交换链切换。
 7. 后续有效 Present 使用新 swap chain/queue 重建图形后端。
 
-不要回退为只清 RTV、只 invalidate ImGui device objects 或只依赖 ResizeBuffers。
+普通窗口缩放必须同时 Hook `ResizeBuffers` 和 `ResizeBuffers1`，两者都进入同一套 `prepareForSwapChainResizeLocked()` / `deferGraphicsResumeAfterSwapChainResizeLocked()` 生命周期：完整释放 DX11/D3D11On12 图形后端，保留 ImGui Context、Win32 后端和菜单状态；缩放成功或失败后都不在 detour 内同步重建，而是短暂防抖，并由稳定的后续 Present 懒重建。连续 Resize 必须续期普通缩放的恢复时间，但不得缩短 F11 已安排的更长暂停。所有 DXGI vtable 索引集中定义在 `ImGuiOverlay.cpp` 顶部，不得在安装代码中散落数字常量。`gResourceMutex` 必须覆盖释放、原始缩放调用和恢复时刻更新，避免 Present 与交换链缩放并发访问图形状态。
+
+LHolo 使用受 `gResourceMutex` 保护的弱 `gActiveSwapChain` 身份，只处理当前游戏交换链的 Present 和 Resize；不得对该指针 `AddRef`，以免延长 Minecraft 交换链生命周期。全屏或设备转换允许图形后端已释放时，由输出到同一游戏窗口的新交换链接管；无窗口的 composition/off-screen 交换链不得接管已绑定的 overlay。`initializeImGui()` 的所有失败出口必须回滚本次创建的 DX11/D3D11On12 对象，首次 Win32 后端初始化失败还必须销毁刚创建的 ImGui Context。
+
+不要回退为只清 RTV、只 invalidate ImGui device objects、在 `ResizeBuffers` 内同步 CreateDeviceObjects，或只依赖窗口消息猜测普通缩放。
 
 ### 10.5 图形故障日志
 
@@ -711,6 +718,7 @@ WndProc 收到首次 `WM_KEYDOWN + VK_F11`，在消息交回 Minecraft 前：
 - `CreateWrappedResource`
 - `CreateRenderTargetView`
 - `ResizeBuffers`
+- `ResizeBuffers1`
 
 错误日志是正式版维护能力，不应作为“调试死代码”删除。
 
@@ -884,7 +892,7 @@ D:\games\LeviLauncher\MC\versions\1.26.20.04\mods\LHolo
 2. 测试 Alt+M 和 `LHolo` 指令。
 3. 打开/关闭菜单，确认鼠标、键盘和视角交接正确。
 4. 连续切换 F11 至少三轮，并在每次切换后重新打开 GUI。
-5. 检查 Present/Present1/ResizeBuffers/ExecuteCommandLists 是否仍使用预期 vtable 索引和接口。
+5. 检查 Present/Present1/ResizeBuffers/ResizeBuffers1/ExecuteCommandLists 是否仍使用顶部集中定义的预期 vtable 索引和接口。
 
 ### 阶段 C：验证结构解析
 

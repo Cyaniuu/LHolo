@@ -54,22 +54,37 @@ namespace {
 using PresentFn = HRESULT(__stdcall*)(IDXGISwapChain*, UINT, UINT);
 using Present1Fn = HRESULT(__stdcall*)(IDXGISwapChain1*, UINT, UINT, DXGI_PRESENT_PARAMETERS const*);
 using ResizeBuffersFn = HRESULT(__stdcall*)(IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT);
+using ResizeBuffers1Fn = HRESULT(__stdcall*)(
+    IDXGISwapChain3*,
+    UINT,
+    UINT,
+    UINT,
+    DXGI_FORMAT,
+    UINT,
+    UINT const*,
+    IUnknown* const*
+);
 using ExecuteCommandListsFn = void(__stdcall*)(ID3D12CommandQueue*, UINT, ID3D12CommandList* const*);
 
 PresentFn             gOriginalPresent{};
 Present1Fn            gOriginalPresent1{};
 ResizeBuffersFn       gOriginalResizeBuffers{};
+ResizeBuffers1Fn      gOriginalResizeBuffers1{};
 ExecuteCommandListsFn gOriginalExecuteCommandLists{};
 
 void* gPresentTarget{};
 void* gPresent1Target{};
 void* gResizeTarget{};
+void* gResize1Target{};
 void* gExecuteTarget{};
 
 ID3D11Device*        gDevice{};
 ID3D11DeviceContext* gDeviceContext{};
 ID3D11On12Device*    gDevice11On12{};
 ID3D12CommandQueue*  gGameQueue{};
+// Weak identity of the swap chain currently owned by LHolo. Access is guarded
+// by gResourceMutex; retaining it avoids extending the game's COM lifetime.
+IDXGISwapChain*      gActiveSwapChain{};
 
 HWND    gWindow{};
 WNDPROC gOriginalWndProc{};
@@ -90,6 +105,14 @@ constexpr UINT kMsgRestoreNativeCursor = WM_APP + 0x101;
 std::array<bool, 256> gGameKeysDown{};
 std::array<bool, 5>   gGameMouseButtonsDown{};
 std::atomic_bool      gConsumeEscapeRelease{false};
+
+constexpr ULONGLONG kFullscreenGraphicsResumeDelayMs = 750;
+constexpr ULONGLONG kResizeGraphicsResumeDelayMs     = 100;
+constexpr size_t    kPresentVtableIndex              = 8;
+constexpr size_t    kResizeBuffersVtableIndex        = 13;
+constexpr size_t    kPresent1VtableIndex             = 22;
+constexpr size_t    kResizeBuffers1VtableIndex       = 39;
+constexpr size_t    kExecuteCommandListsVtableIndex  = 10;
 
 auto& logger() { return LHolo::getInstance().getSelf().getLogger(); }
 
@@ -129,11 +152,6 @@ HWND findProcessWindow() {
     return search.result;
 }
 
-void invalidateBackBuffers() {
-    // D3D11On12 back buffers are deliberately never cached across frames.
-    // Keep this lifecycle hook for the native D3D11 backend and ImGui objects.
-}
-
 void releaseGraphicsBackend() {
     if (gGraphicsInitialized) {
         ImGui_ImplDX11_Shutdown();
@@ -151,6 +169,36 @@ void releaseGraphicsBackend() {
     gDevice11On12 = nullptr;
     gDeviceContext = nullptr;
     gDevice = nullptr;
+}
+
+bool canUseSwapChainLocked(IDXGISwapChain* swapChain) {
+    if (!swapChain) return false;
+    if (!gActiveSwapChain || gActiveSwapChain == swapChain) return true;
+    if (gGraphicsInitialized || !gWindow) return false;
+
+    // A fullscreen/device transition may replace the swap-chain object while
+    // retaining the game window. Permit that explicit handoff, but never let
+    // a composition/off-screen chain from another mod claim the overlay.
+    DXGI_SWAP_CHAIN_DESC description{};
+    return SUCCEEDED(swapChain->GetDesc(&description))
+        && description.OutputWindow == gWindow;
+}
+
+// Callers must hold gResourceMutex across both helpers and the original DXGI
+// resize call so Present cannot rebuild against a swap chain mid-transition.
+void prepareForSwapChainResizeLocked() {
+    if (gGraphicsInitialized) releaseGraphicsBackend();
+}
+
+void deferGraphicsResumeAfterSwapChainResizeLocked() {
+    // Window-edge dragging can issue a burst of resizes. Debounce backend
+    // recreation and let the first stable Present rebuild it lazily. Never
+    // shorten the longer suspension already scheduled by an F11 transition.
+    auto const resizeResumeAt = GetTickCount64() + kResizeGraphicsResumeDelayMs;
+    auto const currentResumeAt = gGraphicsResumeAt.load(std::memory_order_acquire);
+    if (currentResumeAt < resizeResumeAt) {
+        gGraphicsResumeAt.store(resizeResumeAt, std::memory_order_release);
+    }
 }
 
 void loadFonts() {
@@ -359,7 +407,10 @@ LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         {
             std::lock_guard lock(gResourceMutex);
             releaseGraphicsBackend();
-            gGraphicsResumeAt.store(GetTickCount64() + 750, std::memory_order_release);
+            gGraphicsResumeAt.store(
+                GetTickCount64() + kFullscreenGraphicsResumeDelayMs,
+                std::memory_order_release
+            );
         }
         logger().info("ImGui graphics backend suspended for fullscreen transition");
     }
@@ -450,6 +501,10 @@ void executeCommandListsHook(ID3D12CommandQueue* queue, UINT count, ID3D12Comman
 bool initializeImGui(IDXGISwapChain* swapChain) {
     if (gImGuiInitialized && gGraphicsInitialized) return true;
     if (GetTickCount64() < gGraphicsResumeAt.load(std::memory_order_acquire)) return false;
+
+    // Every failed attempt starts the next Present from a known empty graphics
+    // state. This also cleans partial COM objects left by a failed API call.
+    releaseGraphicsBackend();
     if (SUCCEEDED(swapChain->GetDevice(__uuidof(ID3D11Device), reinterpret_cast<void**>(&gDevice)))) {
         gDevice->GetImmediateContext(&gDeviceContext);
     } else {
@@ -469,23 +524,39 @@ bool initializeImGui(IDXGISwapChain* swapChain) {
             nullptr
         );
         device12->Release();
-        if (FAILED(result) || !gDevice) return false;
+        if (FAILED(result) || !gDevice) {
+            releaseGraphicsBackend();
+            return false;
+        }
         if (FAILED(gDevice->QueryInterface(__uuidof(ID3D11On12Device), reinterpret_cast<void**>(&gDevice11On12)))) {
+            releaseGraphicsBackend();
             return false;
         }
     }
 
     DXGI_SWAP_CHAIN_DESC description{};
-    if (FAILED(swapChain->GetDesc(&description))) return false;
-    gWindow = description.OutputWindow ? description.OutputWindow : findProcessWindow();
-    if (!gWindow) return false;
+    if (FAILED(swapChain->GetDesc(&description))) {
+        releaseGraphicsBackend();
+        return false;
+    }
+    auto const window = description.OutputWindow ? description.OutputWindow : findProcessWindow();
+    if (!window || (gWindow && window != gWindow)) {
+        releaseGraphicsBackend();
+        return false;
+    }
 
     if (!gImGuiInitialized) {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGui::StyleColorsDark();
         loadFonts();
-        if (!ImGui_ImplWin32_Init(gWindow)) return false;
+        if (!ImGui_ImplWin32_Init(window)) {
+            ui::resetFluentTheme();
+            ImGui::DestroyContext();
+            releaseGraphicsBackend();
+            return false;
+        }
+        gWindow = window;
         gOriginalWndProc = reinterpret_cast<WNDPROC>(
             SetWindowLongPtrW(gWindow, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(windowProc))
         );
@@ -497,6 +568,7 @@ bool initializeImGui(IDXGISwapChain* swapChain) {
         return false;
     }
     gGraphicsInitialized = true;
+    gActiveSwapChain = swapChain;
     logger().info("ImGui graphics backend initialized");
     return true;
 }
@@ -506,6 +578,7 @@ void render(IDXGISwapChain* swapChain) {
     if (gRendering.exchange(true, std::memory_order_acq_rel)) return;
     struct Reset { ~Reset() { gRendering.store(false, std::memory_order_release); } } reset;
     std::lock_guard lock(gResourceMutex);
+    if (!canUseSwapChainLocked(swapChain)) return;
 
     // Initialize the backend and install the WndProc on the first usable
     // Present even while the menu is hidden. This matches ChiyanMap's proven
@@ -650,16 +723,65 @@ HRESULT __stdcall resizeHook(
     DXGI_FORMAT format,
     UINT flags
 ) {
-    std::lock_guard lock(gResourceMutex);
-    invalidateBackBuffers();
-    if (gGraphicsInitialized) ImGui_ImplDX11_InvalidateDeviceObjects();
+    std::unique_lock lock(gResourceMutex);
+    if (gActiveSwapChain != swapChain) {
+        lock.unlock();
+        return gOriginalResizeBuffers(swapChain, count, width, height, format, flags);
+    }
+
+    // ResizeBuffers requires every reference to the old buffers to be gone.
+    // Although LHolo creates its wrapped back buffer and RTV per frame, the
+    // D3D11On12 context may still retain state from the last submission. Use
+    // the same full graphics-backend teardown as the proven F11 path, while
+    // preserving the ImGui context, Win32 backend and menu state.
+    prepareForSwapChainResizeLocked();
+
     auto const result = gOriginalResizeBuffers(swapChain, count, width, height, format, flags);
-    if (SUCCEEDED(result) && gGraphicsInitialized) {
-        if (!ImGui_ImplDX11_CreateDeviceObjects()) {
-            logger().error("ImGui device-object recreation failed after ResizeBuffers");
-        }
-    } else if (FAILED(result)) {
+    deferGraphicsResumeAfterSwapChainResizeLocked();
+    if (FAILED(result)) {
         logGraphicsFailure(swapChain, "ResizeBuffers", result);
+    }
+    return result;
+}
+
+HRESULT __stdcall resize1Hook(
+    IDXGISwapChain3* swapChain,
+    UINT count,
+    UINT width,
+    UINT height,
+    DXGI_FORMAT format,
+    UINT flags,
+    UINT const* creationNodeMask,
+    IUnknown* const* presentQueue
+) {
+    std::unique_lock lock(gResourceMutex);
+    if (gActiveSwapChain != static_cast<IDXGISwapChain*>(swapChain)) {
+        lock.unlock();
+        return gOriginalResizeBuffers1(
+            swapChain,
+            count,
+            width,
+            height,
+            format,
+            flags,
+            creationNodeMask,
+            presentQueue
+        );
+    }
+    prepareForSwapChainResizeLocked();
+    auto const result = gOriginalResizeBuffers1(
+        swapChain,
+        count,
+        width,
+        height,
+        format,
+        flags,
+        creationNodeMask,
+        presentQueue
+    );
+    deferGraphicsResumeAfterSwapChainResizeLocked();
+    if (FAILED(result)) {
+        logGraphicsFailure(swapChain, "ResizeBuffers1", result);
     }
     return result;
 }
@@ -703,15 +825,28 @@ bool ensureInstalled() {
         ))) return false;
 
     auto** swapVtable = *reinterpret_cast<void***>(dummySwapChain);
-    gPresentTarget = swapVtable[8];
-    gResizeTarget = swapVtable[13];
+    gPresentTarget = swapVtable[kPresentVtableIndex];
+    gResizeTarget = swapVtable[kResizeBuffersVtableIndex];
     bool ok = installHook(gPresentTarget, reinterpret_cast<void*>(presentHook), reinterpret_cast<void**>(&gOriginalPresent))
         && installHook(gResizeTarget, reinterpret_cast<void*>(resizeHook), reinterpret_cast<void**>(&gOriginalResizeBuffers));
     IDXGISwapChain1* swapChain1{};
     if (SUCCEEDED(dummySwapChain->QueryInterface(__uuidof(IDXGISwapChain1), reinterpret_cast<void**>(&swapChain1)))) {
-        gPresent1Target = (*reinterpret_cast<void***>(swapChain1))[22];
+        gPresent1Target = (*reinterpret_cast<void***>(swapChain1))[kPresent1VtableIndex];
         ok = installHook(gPresent1Target, reinterpret_cast<void*>(present1Hook), reinterpret_cast<void**>(&gOriginalPresent1)) && ok;
         swapChain1->Release();
+    }
+    IDXGISwapChain3* swapChain3{};
+    if (SUCCEEDED(dummySwapChain->QueryInterface(__uuidof(IDXGISwapChain3), reinterpret_cast<void**>(&swapChain3)))) {
+        gResize1Target = (*reinterpret_cast<void***>(swapChain3))[kResizeBuffers1VtableIndex];
+        ok = installHook(
+                 gResize1Target,
+                 reinterpret_cast<void*>(resize1Hook),
+                 reinterpret_cast<void**>(&gOriginalResizeBuffers1)
+             )
+          && ok;
+        swapChain3->Release();
+    } else {
+        ok = false;
     }
     dummySwapChain->Release();
     dummyContext->Release();
@@ -723,7 +858,7 @@ bool ensureInstalled() {
         queueDescription.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
         ID3D12CommandQueue* dummyQueue{};
         if (SUCCEEDED(dummyDevice12->CreateCommandQueue(&queueDescription, __uuidof(ID3D12CommandQueue), reinterpret_cast<void**>(&dummyQueue)))) {
-            gExecuteTarget = (*reinterpret_cast<void***>(dummyQueue))[10];
+            gExecuteTarget = (*reinterpret_cast<void***>(dummyQueue))[kExecuteCommandListsVtableIndex];
             ok = installHook(gExecuteTarget, reinterpret_cast<void*>(executeCommandListsHook), reinterpret_cast<void**>(&gOriginalExecuteCommandLists)) && ok;
             dummyQueue->Release();
         }
@@ -745,6 +880,7 @@ void shutdown() {
     gMouseHandoffActive.store(false, std::memory_order_release);
     ClipCursor(nullptr);
     removeHook(gExecuteTarget);
+    removeHook(gResize1Target);
     removeHook(gPresent1Target);
     removeHook(gResizeTarget);
     removeHook(gPresentTarget);
@@ -754,7 +890,6 @@ void shutdown() {
     gOriginalWndProc = nullptr;
 
     std::lock_guard lock(gResourceMutex);
-    invalidateBackBuffers();
     releaseGraphicsBackend();
     if (gImGuiInitialized) {
         ImGui_ImplWin32_Shutdown();
@@ -764,6 +899,7 @@ void shutdown() {
     }
     if (gGameQueue) gGameQueue->Release();
     gGameQueue = nullptr;
+    gActiveSwapChain = nullptr;
     gWindow = nullptr;
     gInstalled.store(false, std::memory_order_release);
 }
