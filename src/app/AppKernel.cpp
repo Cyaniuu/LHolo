@@ -38,8 +38,15 @@ bool AppKernel::enable() {
         logger.warn("Failed to install easy-place hooks");
     }
 
-    if (!input::installMenuInputGuard()) {
-        logger.warn("Failed to install menu block-destroy guard");
+    auto const menuInputGuardStatus = input::installMenuInputGuard();
+    if (!menuInputGuardStatus.mouseInputHookInstalled) {
+        logger.warn("Failed to install menu mouse-input guard");
+    }
+    if (!menuInputGuardStatus.keyDownInputHookInstalled) {
+        logger.warn("Failed to install menu key-down guard");
+    }
+    if (!menuInputGuardStatus.keyUpInputHookInstalled) {
+        logger.warn("Failed to install menu key-up guard");
     }
 
     if (!overlay::ensureInstalled()) {

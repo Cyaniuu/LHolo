@@ -40,6 +40,7 @@
 #include <filesystem>
 #include <mutex>
 
+#include "input/MenuInputGuard.h"
 #include "plugin/LHolo.h"
 #include "structure/StructureLoader.h"
 #include "ui/FluentTheme.h"
@@ -212,6 +213,7 @@ void releaseGameInput(HWND window) {
     // Minecraft has already seen these down events. Send matching releases
     // before the menu starts swallowing input, otherwise movement/use remains
     // latched after the physical key is released while ImGui is open.
+    input::MenuInputHandoffScope inputHandoff;
     for (std::size_t key = 0; key < gGameKeysDown.size(); ++key) {
         if (!gGameKeysDown[key]) continue;
         auto const virtualKey = static_cast<UINT>(key);
@@ -296,6 +298,47 @@ void maintainMouseHandoff(HWND window) {
     confineMouseToClientCenter(window);
 }
 
+bool isMenuInputMessage(UINT message) {
+    switch (message) {
+    case WM_INPUT:
+    case WM_INPUT_DEVICE_CHANGE:
+    case WM_MOUSEMOVE:
+    case WM_LBUTTONDOWN:
+    case WM_LBUTTONUP:
+    case WM_RBUTTONDOWN:
+    case WM_RBUTTONUP:
+    case WM_MBUTTONDOWN:
+    case WM_MBUTTONUP:
+    case WM_XBUTTONDOWN:
+    case WM_XBUTTONUP:
+    case WM_MOUSEWHEEL:
+    case WM_MOUSEHWHEEL:
+    case WM_KEYDOWN:
+    case WM_KEYUP:
+    case WM_SYSKEYDOWN:
+    case WM_SYSKEYUP:
+    case WM_CHAR:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool isFullscreenKeyMessage(UINT message, WPARAM wParam) {
+    return wParam == VK_F11
+        && (message == WM_KEYDOWN || message == WM_KEYUP
+            || message == WM_SYSKEYDOWN || message == WM_SYSKEYUP);
+}
+
+LRESULT consumeMenuInputMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    if (message == WM_INPUT) {
+        // Foreground RIM_INPUT must reach DefWindowProc for User32 cleanup,
+        // but must not be forwarded to Minecraft's original WndProc.
+        return DefWindowProcW(window, message, wParam, lParam);
+    }
+    return 1;
+}
+
 LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     if (message == kMsgRestoreNativeCursor) {
         ::SetCursor(::LoadCursorW(nullptr, IDC_ARROW));
@@ -370,9 +413,7 @@ LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         gMouseHandoffActive.store(false, std::memory_order_release);
         ClipCursor(nullptr);
         ImGui_ImplWin32_WndProcHandler(window, message, wParam, lParam);
-        if ((message == WM_KEYDOWN || message == WM_KEYUP
-             || message == WM_SYSKEYDOWN || message == WM_SYSKEYUP)
-            && wParam == VK_F11) {
+        if (isFullscreenKeyMessage(message, wParam)) {
             return gOriginalWndProc
                 ? CallWindowProcW(gOriginalWndProc, window, message, wParam, lParam)
                 : DefWindowProcW(window, message, wParam, lParam);
@@ -383,57 +424,14 @@ LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             confineMouseToClientCenter(window);
             return 1;
         }
-        switch (message) {
-        case WM_INPUT:
-            // Microsoft requires foreground RIM_INPUT messages to reach
-            // DefWindowProc so User32 can perform its raw-input cleanup. Do
-            // that cleanup without forwarding the device event to Minecraft.
-            DefWindowProcW(window, message, wParam, lParam);
-            return 0;
-        case WM_INPUT_DEVICE_CHANGE:
-        case WM_MOUSEMOVE:
-        case WM_LBUTTONDOWN:
-        case WM_LBUTTONUP:
-        case WM_RBUTTONDOWN:
-        case WM_RBUTTONUP:
-        case WM_MBUTTONDOWN:
-        case WM_MBUTTONUP:
-        case WM_MOUSEWHEEL:
-        case WM_MOUSEHWHEEL:
-        case WM_KEYDOWN:
-        case WM_KEYUP:
-        case WM_CHAR:
-            return 1;
-        default:
-            break;
+        if (isMenuInputMessage(message)) {
+            return consumeMenuInputMessage(window, message, wParam, lParam);
         }
     }
-    if (structure::isInputTransitionBlocked()) {
-        switch (message) {
-        case WM_INPUT:
-            DefWindowProcW(window, message, wParam, lParam);
-            return 0;
-        case WM_INPUT_DEVICE_CHANGE:
-        case WM_MOUSEMOVE:
-        case WM_LBUTTONDOWN:
-        case WM_LBUTTONUP:
-        case WM_RBUTTONDOWN:
-        case WM_RBUTTONUP:
-        case WM_MBUTTONDOWN:
-        case WM_MBUTTONUP:
-        case WM_XBUTTONDOWN:
-        case WM_XBUTTONUP:
-        case WM_MOUSEWHEEL:
-        case WM_MOUSEHWHEEL:
-        case WM_KEYDOWN:
-        case WM_KEYUP:
-        case WM_SYSKEYDOWN:
-        case WM_SYSKEYUP:
-        case WM_CHAR:
-            if (wParam != VK_F11) return 1;
-            break;
-        default: break;
-        }
+    if (structure::isMenuInputCaptured()
+        && isMenuInputMessage(message)
+        && !isFullscreenKeyMessage(message, wParam)) {
+        return consumeMenuInputMessage(window, message, wParam, lParam);
     }
     return forwardToGame(window, message, wParam, lParam);
 }

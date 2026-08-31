@@ -127,8 +127,8 @@ LHolo/
 │  │  └─ PlaceHelper.h          配置开关与 Hook 生命周期接口
 │  └─ input/
 │     ├─ HotkeyTypes.h          快捷键槽位、顺序与数量的唯一共享定义
-│     ├─ MenuInputGuard.cpp     菜单期间阻止本地玩家开始/持续破坏方块
-│     └─ MenuInputGuard.h       破坏拦截 Hook 生命周期接口
+│     ├─ MenuInputGuard.cpp     Bedrock 鼠标与 HID 键盘输入源拦截
+│     └─ MenuInputGuard.h       输入保护安装状态与生命周期接口
 ├─ tools/java_to_bedrock/       开发期映射生成器（运行时不需要 Java）
 ├─ manifest.json                Mod Packer 模板
 ├─ xmake.lua                    依赖、编译选项和发布规则
@@ -247,7 +247,7 @@ LHolo/
   atomic、mutex、字符串和容器均不向调用者暴露，`PlaceHelper`/`PlacementExecutor` 只通过具体操作读写。
 - `place/PlacementExecutor` 承载轻松/手动/范围放置的规划与执行（背包查找、交换、放置事务、
   点击候选与预测匹配）；游戏 Hook 留在 `PlaceHelper`，只调用 `tickEasyPlace`/`tickRangePlace`。
-- `input` 负责菜单期间的最小游戏动作保护；当前只拦截本地玩家破坏方块，不扩展为移动冻结或全交互封锁。
+- `input` 负责菜单期间的 Minecraft 输入边界：在 `MouseDevice`/`HIDControllerGameCoreDesktop` 输入源阻断游戏与原生页面输入；是否捕获统一读取 `StructureLoader::isMenuInputCaptured()`，不得在各输入入口分别组合 GUI 与过渡状态。
 - `plugin` 只把生命周期委托给 `app/AppKernel`，不承载业务逻辑。
 
 ---
@@ -260,7 +260,7 @@ LHolo/
 
 1. 安装投影相关 LeviLamina Hook。
 2. 安装辅助放置 Hook：`LocalPlayer::$tickWorld` 负责每 tick 驱动，三个 `GameMode` build Hook 负责命中真实方块时的右键状态和原版放置抑制，`GameMode::$useItem` 负责捕获指向空气的右键操作（tick Hook 失败仅告警，不阻断；单个手动 Hook 失败会分别告警并降级对应行为）。
-3. 安装菜单破坏保护的 `GameMode::$startDestroyBlock` / `$continueDestroyBlock` Hook（失败仅告警，不阻断）。
+3. 安装菜单输入保护：`MouseDevice::feed` 与 `HIDControllerGameCoreDesktop::$onKeyDown/$onKeyUp` 在游戏和原生 UI 处理前取得输入所有权。三项 Hook 状态独立告警，不阻断菜单启用。
 4. 尝试安装 ImGui/DXGI Hook；图形环境尚未可用时允许后续 `Present` 重试。
 
 配置由 `LHolo::load()` 在 enable 之前从 `mods/LHolo/config/config.json` 读取。当前没有单独依赖世界退出事件；投影渲染入口通过 `client/level/dimension` 身份变化检测世界切换，并在上下文失效时调用 `projection::disable()` 等价的状态清理和 `structure::clear()`。
@@ -278,7 +278,7 @@ LHolo/
 
 1. 保存配置。
 2. 投影停止接收网格任务，提升 Worker generation，清空待处理结果并等待 in-flight Worker 退出；随后清理投影状态和 GPU 网格。
-3. 卸载菜单破坏保护 Hook。
+3. 卸载菜单鼠标/HID 输入源 Hook。
 4. 卸载辅助放置的 tick/build Hook。
 5. 关闭 ImGui 图形后端、恢复原 WndProc、移除 MinHook。
 6. 清除已加载结构、菜单和快捷键运行态。
@@ -602,11 +602,9 @@ HUD 每帧只读取原子计数，不查询世界、不遍历结构。
 3. 同一表面是否由投影模型、纠错面和 hit-select 重复绘制。
 4. 材质是否写深度、混合状态是否被其他 Hook 污染。
 
-### 8.7 菜单破坏保护开销
+### 8.7 菜单输入保护开销
 
-`input/MenuInputGuard.cpp` 只 Hook 开始破坏和持续破坏两个动作。菜单关闭时仅检查 GUI 原子状态和关闭过渡时间戳后立即进入原函数；不扫描方块、不分配内存、不加锁、不写逐次日志，也不注册每帧事件。菜单打开后，仅在玩家实际尝试破坏方块时查询当前 `ClientInstance`/`LocalPlayer` 并比较 `GameMode::mPlayer`，因此长按破坏的每 tick 调用也不会形成可测量的持续负载。
-
-不要为节省这一次条件查询长期缓存 `LocalPlayer*`；退出世界、切换存档或服务器后裸指针可能失效。
+`input/MenuInputGuard.cpp` 只 Hook 鼠标输入源和键盘按下/释放三个入口。菜单关闭时读取 `StructureLoader::isMenuInputCaptured()` 后立即进入原函数；不扫描方块、不分配内存、不加锁、不查询玩家、不写逐次日志。
 
 ---
 
@@ -620,7 +618,7 @@ GUI 是全屏 ImGui 窗口，不是切换 Minecraft 窗口模式。
 
 ### 9.2 输入所有权
 
-菜单打开时，WndProc 将鼠标、键盘、字符和 Raw Input 交给 ImGui并阻止游戏同时处理，以避免拖动 GUI 时转动视角或继续移动。
+菜单打开时，WndProc 将鼠标、键盘、字符和 Raw Input 交给 ImGui；`MenuInputGuard` 同时在 `MouseDevice::feed` 和 HID 键盘入口阻止输入进入 Minecraft 原生页面。两层都读取 `StructureLoader::isMenuInputCaptured()`，避免窗口消息已被界面消费、原生页面仍收到内部输入。
 
 打开菜单前记录游戏当前按键/鼠标按下状态，并向游戏补发必要的 key-up/button-up，避免“按住移动键打开菜单，关闭后角色自动走”。
 
@@ -633,18 +631,16 @@ GUI 是全屏 ImGui 窗口，不是切换 Minecraft 窗口模式。
 
 不要依赖“消息积压”解释输入 bug；应检查鼠标坐标、Capture/ClipCursor、按键状态和 Raw Input 所有权。
 
-### 9.3 菜单期间的方块破坏保护
+### 9.3 Bedrock 输入源保护
 
-WndProc/Raw Input 属于界面输入交接，不能作为阻止游戏动作的唯一保证。当前采用最小客户端动作保护：
+WndProc/Raw Input 只覆盖 Windows 消息边界，不能作为阻止 Minecraft 原生 UI 和游戏动作的唯一保证。当前在 Bedrock 输入源增加第二道边界：
 
-- Hook `GameMode::$startDestroyBlock(BlockPos const&, uchar, bool&)`，覆盖初次左键和创造模式瞬间破坏入口。
-- Hook `GameMode::$continueDestroyBlock(BlockPos const&, uchar, Vec3 const&, bool&)`，覆盖生存模式长按破坏。
-- 仅当 `structure::isGuiVisible()` 或关闭过渡仍在阻断期，并且 `GameMode::mPlayer` 等于 `ClientInstance::getLocalPlayer()` 时，将 `hasDestroyedBlock` 设为 `false` 并返回 `false`。
-- 拦截发生在客户端破坏流程继续和正常破坏请求发送之前，因此进入远程服务器也有效，不要求服务器安装插件；“本地玩家”表示本机控制的玩家，不等于“本地存档”。
-- 不拦截其他玩家，不冻结移动，不阻止放置、使用物品、攻击实体、切换物品栏或背包操作。
-- 当前不 Hook `LocalPlayer::$swing`，所以手臂挥动动画仍可能出现；方块裂纹进度和实际破坏被阻止。不要为了隐藏手臂动画扩大动作拦截范围，除非产品需求明确改变。
-
-API 签名以当前 `LeviLamina/src/mc/world/gamemode/GameMode.h` 的 26.20 生成头为准。升级版本时必须重新核对两个 `$` thunk 的参数、返回值和 `GameMode::mPlayer` 可用性，禁止按旧版本猜签名。
+- `MouseDevice::feed` 与 `HIDControllerGameCoreDesktop::$onKeyDown/$onKeyUp` 是主路径；菜单可见或关闭过渡期间直接停止向原生 UI 分发，F11 例外并继续交给 Minecraft 的全屏切换生命周期。
+- 打开菜单前向 Minecraft 补发的释放消息由 `MenuInputHandoffScope` 临时放行；禁止把所有 key-up/button-up 长期放行，否则原生按钮通常会在释放边沿触发，重新产生穿透。
+- 三个 Hook 的安装状态由 `MenuInputGuardStatus` 分别返回；单个 Hook 冲突不得伪装成整体成功，也不得导致菜单模块无法启用。
+- PreLoader/LeviLamina Hook 返回值是 0 成功、非 0 失败，禁止用 `< 0` 判断安装结果。
+- 输入源 Hook 只在菜单持有输入期间暂停本机的移动、放置、使用、攻击和原生 UI 操作；关闭菜单后立即恢复，不修改其他玩家或服务端状态。
+- 鼠标按下状态在打开菜单前通过合成释放消息归还给游戏，因此无需再维护 `GameMode::$startDestroyBlock/$continueDestroyBlock` 专用保护。
 
 ### 9.4 快捷键配置
 
@@ -741,7 +737,7 @@ LeviLamina Hook：
 - `LocalPlayer::$tickWorld`（`place` 模块）：轻松、手动和范围放置的每 tick 驱动。
 - `GameMode::$startBuildBlock` / `$buildBlock` / `$stopBuildBlock`（`place` 模块）：手动模式命中真实方块时的右键按下、持续、释放状态及原版重复放置抑制。
 - `GameMode::$useItem`（`place` 模块）：手动模式指向空气时创建单次放置请求，使浮空投影方块也能进入放置链路。
-- `GameMode::$startDestroyBlock` / `$continueDestroyBlock`（`input` 模块）：菜单期间阻止本地玩家开始或持续破坏方块。
+- `MouseDevice::feed` 与 `HIDControllerGameCoreDesktop::$onKeyDown/$onKeyUp`（`input` 模块）：菜单期间在 Bedrock 输入源阻止游戏和原生 UI 接收输入。
 
 新版本最容易变化的是成员函数符号、签名、调用层次和 render pass 时序，必须逐一验证，不能只以“Hook 安装成功”判断适配完成。
 

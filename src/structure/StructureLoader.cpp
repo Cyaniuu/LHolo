@@ -115,6 +115,10 @@ bool isInputTransitionBlocked() {
     return GetTickCount64() <= uiState().blockGameInputUntil();
 }
 
+bool isMenuInputCaptured() {
+    return isGuiVisible() || isInputTransitionBlocked();
+}
+
 bool handleGuiHotkeyKeyDown(unsigned int virtualKey) {
     auto const modifierKey = ui::isModifierKey(virtualKey);
     if (virtualKey == VK_CONTROL || virtualKey == VK_LCONTROL || virtualKey == VK_RCONTROL) {

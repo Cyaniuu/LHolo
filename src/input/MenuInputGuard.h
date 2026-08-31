@@ -5,7 +5,22 @@
 
 namespace lholo::input {
 
-bool installMenuInputGuard();
+struct MenuInputGuardStatus {
+    bool mouseInputHookInstalled{};
+    bool keyDownInputHookInstalled{};
+    bool keyUpInputHookInstalled{};
+};
+
+class MenuInputHandoffScope final {
+public:
+    MenuInputHandoffScope();
+    ~MenuInputHandoffScope();
+
+    MenuInputHandoffScope(MenuInputHandoffScope const&) = delete;
+    MenuInputHandoffScope& operator=(MenuInputHandoffScope const&) = delete;
+};
+
+MenuInputGuardStatus installMenuInputGuard();
 void uninstallMenuInputGuard();
 
 } // namespace lholo::input

@@ -6,75 +6,91 @@
 #include "structure/StructureLoader.h"
 
 #include "ll/api/memory/Hook.h"
-#include "ll/api/service/Bedrock.h"
 
-#include "mc/client/game/ClientInstance.h"
-#include "mc/client/player/LocalPlayer.h"
-#include "mc/deps/core/math/Vec3.h"
-#include "mc/world/actor/player/Player.h"
-#include "mc/world/gamemode/GameMode.h"
-#include "mc/world/level/BlockPos.h"
+#include "mc/deps/input/Keyboard.h"
+#include "mc/deps/input/MouseDevice.h"
+#include "mc/deps/input/win/HIDControllerGameCoreDesktop.h"
+
+#include <cstdint>
 
 namespace lholo::input {
 namespace {
 
-bool shouldBlockDestroy(GameMode& gameMode) {
-    if (!structure::isGuiVisible() && !structure::isInputTransitionBlocked()) return false;
+MenuInputGuardStatus gInstallStatus{};
+thread_local std::uint32_t gInputHandoffDepth{};
 
-    auto client = ll::service::getClientInstance();
-    auto* player = client ? client->getLocalPlayer() : nullptr;
-    return player && &gameMode.mPlayer == static_cast<Player*>(player);
+bool menuOwnsGameInput() {
+    return gInputHandoffDepth == 0 && structure::isMenuInputCaptured();
 }
 
 LL_TYPE_INSTANCE_HOOK(
-    MenuStartDestroyBlockHook,
-    ll::memory::HookPriority::Normal,
-    GameMode,
-    &GameMode::$startDestroyBlock,
-    bool,
-    ::BlockPos const& pos,
-    uchar face,
-    bool& hasDestroyedBlock
+    MenuMouseInputHook,
+    ll::memory::HookPriority::Highest,
+    MouseDevice,
+    &MouseDevice::feed,
+    void,
+    char  actionButtonId,
+    schar buttonData,
+    short x,
+    short y,
+    short dx,
+    short dy,
+    bool  forceMotionlessPointer
 ) {
-    if (shouldBlockDestroy(*this)) {
-        hasDestroyedBlock = false;
-        return false;
-    }
-    return origin(pos, face, hasDestroyedBlock);
+    if (menuOwnsGameInput()) return;
+    origin(actionButtonId, buttonData, x, y, dx, dy, forceMotionlessPointer);
 }
 
 LL_TYPE_INSTANCE_HOOK(
-    MenuContinueDestroyBlockHook,
-    ll::memory::HookPriority::Normal,
-    GameMode,
-    &GameMode::$continueDestroyBlock,
-    bool,
-    ::BlockPos const& pos,
-    uchar face,
-    ::Vec3 const& playerPos,
-    bool& hasDestroyedBlock
+    MenuKeyDownInputHook,
+    ll::memory::HookPriority::Highest,
+    HIDControllerGameCoreDesktop,
+    &HIDControllerGameCoreDesktop::$onKeyDown,
+    void,
+    int                                                 keyCode,
+    Bedrock::Input::KeyboardEventProcessor::InputOrigin originType
 ) {
-    if (shouldBlockDestroy(*this)) {
-        hasDestroyedBlock = false;
-        return false;
-    }
-    return origin(pos, face, playerPos, hasDestroyedBlock);
+    if (menuOwnsGameInput() && keyCode != Keyboard::F11) return;
+    origin(keyCode, originType);
+}
+
+LL_TYPE_INSTANCE_HOOK(
+    MenuKeyUpInputHook,
+    ll::memory::HookPriority::Highest,
+    HIDControllerGameCoreDesktop,
+    &HIDControllerGameCoreDesktop::$onKeyUp,
+    void,
+    int keyCode
+) {
+    if (menuOwnsGameInput() && keyCode != Keyboard::F11) return;
+    origin(keyCode);
 }
 
 } // namespace
 
-bool installMenuInputGuard() {
-    if (MenuStartDestroyBlockHook::hook() < 0) return false;
-    if (MenuContinueDestroyBlockHook::hook() < 0) {
-        MenuStartDestroyBlockHook::unhook();
-        return false;
+MenuInputHandoffScope::MenuInputHandoffScope() { ++gInputHandoffDepth; }
+
+MenuInputHandoffScope::~MenuInputHandoffScope() { --gInputHandoffDepth; }
+
+MenuInputGuardStatus installMenuInputGuard() {
+    if (!gInstallStatus.mouseInputHookInstalled) {
+        gInstallStatus.mouseInputHookInstalled = MenuMouseInputHook::hook() == 0;
     }
-    return true;
+    if (!gInstallStatus.keyDownInputHookInstalled) {
+        gInstallStatus.keyDownInputHookInstalled = MenuKeyDownInputHook::hook() == 0;
+    }
+    if (!gInstallStatus.keyUpInputHookInstalled) {
+        gInstallStatus.keyUpInputHookInstalled = MenuKeyUpInputHook::hook() == 0;
+    }
+    return gInstallStatus;
 }
 
 void uninstallMenuInputGuard() {
-    MenuContinueDestroyBlockHook::unhook();
-    MenuStartDestroyBlockHook::unhook();
+    if (gInstallStatus.keyUpInputHookInstalled) MenuKeyUpInputHook::unhook();
+    if (gInstallStatus.keyDownInputHookInstalled) MenuKeyDownInputHook::unhook();
+    if (gInstallStatus.mouseInputHookInstalled) MenuMouseInputHook::unhook();
+
+    gInstallStatus = {};
 }
 
 } // namespace lholo::input

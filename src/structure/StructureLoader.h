@@ -66,6 +66,9 @@ void requestOpenGui();
 bool isGuiVisible();
 bool shouldShowProjectedBlockName();
 bool isInputTransitionBlocked();
+// True while the LHolo menu owns keyboard and mouse input. Keep input guards
+// on every platform-facing path behind this single policy predicate.
+bool isMenuInputCaptured();
 bool handleGuiHotkeyKeyDown(unsigned int virtualKey);
 bool handleGuiHotkeyKeyUp(unsigned int virtualKey);
 void resetHotkeyState();
