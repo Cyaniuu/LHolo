@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "input/HotkeyTypes.h"
+
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -69,20 +71,12 @@ struct PendingHotkeyActions {
     int  offsetZ{};
     int  layerDelta{};
     bool settingsSave{};
-    bool toggleManual{};
-    bool toggleEasy{};
-    bool toggleRange{};
     bool loadProjection{};
     bool closeProjection{};
 };
 
 class StructureUiState {
 public:
-    // 0 gui, 1-6 moves, 7 layer+, 8 layer-, 9 toggle manual, 10 toggle easy,
-    // 11 load projection, 12 close projection, 13 toggle range.
-    static constexpr std::size_t kHotkeyCount = 14;
-    static constexpr std::size_t kMoveHotkeyCount = 6;
-
     static StructureUiState& getInstance();
 
     StructureUiState(StructureUiState const&)            = delete;
@@ -129,9 +123,6 @@ public:
 
     void queueMove(std::size_t index);
     void queueLayerDelta(int delta);
-    void queueToggleManual();
-    void queueToggleEasy();
-    void queueToggleRange();
     void queueLoadProjection();
     void queueCloseProjection();
     void requestSettingsSave();
@@ -143,8 +134,6 @@ public:
     void setMaterialHudEnabled(bool enabled);
     [[nodiscard]] int materialHudPosition() const;
     void setMaterialHudPosition(int position);
-    void requestExperimentalConsentPopup(int feature);
-    [[nodiscard]] int consumeExperimentalConsentPopupRequest();
     void setActionHint(std::string text, std::uint64_t expiry);
     [[nodiscard]] std::uint64_t actionHintExpiry() const;
     [[nodiscard]] ActionHintSnapshot actionHint() const;
@@ -195,7 +184,7 @@ private:
     std::atomic_int   mHudPosition{1};
     std::atomic<float> mUiScale{2.0f};
 
-    std::array<HotkeyStorage, kHotkeyCount> mHotkeys;
+    std::array<HotkeyStorage, input::kHotkeyCount> mHotkeys;
     std::atomic_bool mControlHeld{false};
     std::atomic_bool mAltHeld{false};
     std::atomic_bool mShiftHeld{false};
@@ -205,9 +194,6 @@ private:
     std::atomic_int      mPendingOffsetY{0};
     std::atomic_int      mPendingOffsetZ{0};
     std::atomic_int      mPendingLayerDelta{0};
-    std::atomic_bool     mPendingToggleManual{false};
-    std::atomic_bool     mPendingToggleEasy{false};
-    std::atomic_bool     mPendingToggleRange{false};
     std::atomic_bool     mPendingLoadProjection{false};
     std::atomic_bool     mPendingCloseProjection{false};
     std::atomic_bool     mPendingSettingsSave{false};
@@ -216,7 +202,6 @@ private:
     std::atomic_bool mExperimentalConsent{false};
     std::atomic_bool mMaterialHudEnabled{false};
     std::atomic_int  mMaterialHudPosition{3};
-    std::atomic_int  mPendingConsentPopupFeature{0};
     mutable std::mutex mActionHintMutex;
     std::string        mActionHintText;
     std::atomic_uint64_t mActionHintExpiry{};

@@ -50,7 +50,7 @@ bool                   gPathInitialized{};
 MenuPage               gActivePage{MenuPage::Projection};
 
 struct HotkeyDefinition { HotkeyId id; char const* label; };
-constexpr std::array<HotkeyDefinition, 14> kHotkeyDefinitions{{
+constexpr std::array<HotkeyDefinition, input::kHotkeyCount> kHotkeyDefinitions{{
     {HotkeyId::Gui, "打开投影菜单"},
     {HotkeyId::MoveXMinus, "结构偏移 X -1"},
     {HotkeyId::MoveXPlus, "结构偏移 X +1"},
@@ -60,17 +60,9 @@ constexpr std::array<HotkeyDefinition, 14> kHotkeyDefinitions{{
     {HotkeyId::MoveYMinus, "结构偏移 Y -1"},
     {HotkeyId::LayerIncrease, "上一层"},
     {HotkeyId::LayerDecrease, "下一层"},
-    {HotkeyId::ToggleManual, "开关手动放置"},
-    {HotkeyId::ToggleEasy, "开关轻松放置"},
-    {HotkeyId::ToggleRange, "开关范围放置"},
     {HotkeyId::LoadProjection, "加载投影"},
     {HotkeyId::CloseProjection, "关闭投影"}
 }};
-static_assert(kHotkeyDefinitions.size() == structure::detail::StructureUiState::kHotkeyCount);
-static_assert(
-    static_cast<std::size_t>(HotkeyId::ToggleRange) + 1
-    == structure::detail::StructureUiState::kHotkeyCount
-);
 
 } // namespace
 
@@ -79,10 +71,6 @@ MenuModel buildStructureMenuModel(float effectiveUiScale) {
     auto& session = structure::detail::StructureSession::getInstance();
     auto const sessionSnapshot = session.snapshot();
     auto const hud = uiState().hud();
-    // A placement hotkey pressed before consent asks the menu to jump here and
-    // open the consent popup.
-    model.consentPopupRequest = structure::consumeExperimentalConsentPopupRequest();
-    if (model.consentPopupRequest != 0) gActivePage = MenuPage::Experimental;
     model.page = gActivePage;
     model.pathBuffer = gPathBuffer.data();
     model.pathBufferSize = gPathBuffer.size();
@@ -146,9 +134,6 @@ MenuModel buildStructureMenuModel(float effectiveUiScale) {
     model.hudShowWrongType = hud.showWrongType;
     model.hudShowExtraBlocks = hud.showExtraBlocks;
     model.hudShowProjectedBlockName = hud.showProjectedBlockName;
-    // Fill rows in definition order (not by enum index) so the menu shows them in
-    // that order — keeping 开关范围放置 right under 开关轻松放置 while its enum id
-    // stays 13, which leaves the load/close projection hotkey indices untouched.
     std::size_t rowIndex = 0;
     for (auto const& definition : kHotkeyDefinitions) {
         auto const binding = uiState().hotkey(static_cast<std::size_t>(definition.id));

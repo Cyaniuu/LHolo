@@ -25,7 +25,7 @@ struct DefaultHotkey {
     unsigned int modifiers;
 };
 
-constexpr std::array<DefaultHotkey, StructureUiState::kHotkeyCount> kDefaultHotkeys{{
+constexpr std::array<DefaultHotkey, input::kHotkeyCount> kDefaultHotkeys{{
     {'M',     lholo::ui::kHotkeyModifierAlt},
     {VK_LEFT, lholo::ui::kHotkeyModifierControl},
     {VK_RIGHT,lholo::ui::kHotkeyModifierControl},
@@ -35,17 +35,14 @@ constexpr std::array<DefaultHotkey, StructureUiState::kHotkeyCount> kDefaultHotk
     {VK_DOWN, lholo::ui::kHotkeyModifierShift},
     {VK_UP,   lholo::ui::kHotkeyModifierAlt},
     {VK_DOWN, lholo::ui::kHotkeyModifierAlt},
-    {'R',     0},
-    {'F',     0},
     {0,       0},
     {0,       0},
-    {'Y',     0},
 }};
 
 } // namespace
 
 StructureUiState::StructureUiState() {
-    for (std::size_t index = 0; index < kHotkeyCount; ++index) {
+    for (std::size_t index = 0; index < mHotkeys.size(); ++index) {
         mHotkeys[index].key.store(kDefaultHotkeys[index].key, std::memory_order_relaxed);
         mHotkeys[index].modifiers.store(kDefaultHotkeys[index].modifiers, std::memory_order_relaxed);
     }
@@ -296,18 +293,6 @@ void StructureUiState::queueLayerDelta(int delta) {
     else if (delta < 0) mPendingLayerDelta.fetch_sub(1, std::memory_order_relaxed);
 }
 
-void StructureUiState::queueToggleManual() {
-    mPendingToggleManual.store(true, std::memory_order_release);
-}
-
-void StructureUiState::queueToggleEasy() {
-    mPendingToggleEasy.store(true, std::memory_order_release);
-}
-
-void StructureUiState::queueToggleRange() {
-    mPendingToggleRange.store(true, std::memory_order_release);
-}
-
 void StructureUiState::queueLoadProjection() {
     mPendingLoadProjection.store(true, std::memory_order_release);
 }
@@ -327,9 +312,6 @@ PendingHotkeyActions StructureUiState::consumePendingHotkeyActions() {
         mPendingOffsetZ.exchange(0, std::memory_order_acq_rel),
         mPendingLayerDelta.exchange(0, std::memory_order_acq_rel),
         mPendingSettingsSave.exchange(false, std::memory_order_acq_rel),
-        mPendingToggleManual.exchange(false, std::memory_order_acq_rel),
-        mPendingToggleEasy.exchange(false, std::memory_order_acq_rel),
-        mPendingToggleRange.exchange(false, std::memory_order_acq_rel),
         mPendingLoadProjection.exchange(false, std::memory_order_acq_rel),
         mPendingCloseProjection.exchange(false, std::memory_order_acq_rel)
     };
@@ -357,14 +339,6 @@ int StructureUiState::materialHudPosition() const {
 
 void StructureUiState::setMaterialHudPosition(int position) {
     mMaterialHudPosition.store(std::clamp(position, 0, 3), std::memory_order_release);
-}
-
-void StructureUiState::requestExperimentalConsentPopup(int feature) {
-    mPendingConsentPopupFeature.store(feature, std::memory_order_release);
-}
-
-int StructureUiState::consumeExperimentalConsentPopupRequest() {
-    return mPendingConsentPopupFeature.exchange(0, std::memory_order_acq_rel);
 }
 
 void StructureUiState::setActionHint(std::string text, std::uint64_t expiry) {

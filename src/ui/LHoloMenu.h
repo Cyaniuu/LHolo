@@ -2,6 +2,7 @@
 #pragma once
 
 #include "ui/FluentTheme.h"
+#include "input/HotkeyTypes.h"
 
 #include <array>
 #include <cstddef>
@@ -13,6 +14,8 @@
 #include <vector>
 
 namespace lholo::ui {
+
+using HotkeyId = input::HotkeyId;
 
 enum class MenuPage : std::uint8_t {
     Projection,
@@ -39,13 +42,6 @@ struct CaptureDraftModel {
     CapturePointModel first;
     CapturePointModel second;
     bool              includeEntities{};
-};
-
-enum class HotkeyId : std::uint8_t {
-    Gui, MoveXMinus, MoveXPlus, MoveZMinus, MoveZPlus,
-    MoveYPlus, MoveYMinus, LayerIncrease, LayerDecrease,
-    ToggleManual, ToggleEasy, LoadProjection, CloseProjection,
-    ToggleRange
 };
 
 struct HotkeyRow {
@@ -88,7 +84,6 @@ struct MenuModel {
     bool manualPlace{};
     bool rangeEnabled{};
     bool experimentalConsent{};
-    int  consentPopupRequest{};
     int placementRadius{4};
     int autoPlacementBreakCooldownSeconds{10};
     int offsetX{};
@@ -106,7 +101,7 @@ struct MenuModel {
     int maxLayerY{};
     int maxLayerX{};
 
-    std::array<HotkeyRow, 14> hotkeys{};
+    std::array<HotkeyRow, input::kHotkeyCount> hotkeys{};
     bool hudEnabled{true};
     int hudPosition{1};
     bool hudShowFileName{true};

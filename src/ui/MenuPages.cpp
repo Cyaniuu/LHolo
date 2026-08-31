@@ -262,6 +262,32 @@ void renderCreateStructurePage(MenuModel& model, MenuActions const& actions, UiM
 
 namespace {
 
+bool renderExperimentalInfoButton(char const* label) {
+    auto const& style = ImGui::GetStyle();
+    auto const  textSize = ImGui::CalcTextSize(label);
+    auto const  buttonSize = ImVec2(
+        textSize.x + style.FramePadding.x * 2.0f,
+        textSize.y + style.FramePadding.y * 2.0f
+    );
+
+    // The CJK atlas' visible glyphs sit slightly below the centre of ImGui's
+    // logical line box. Draw the label ourselves with a scale-aware optical
+    // correction while retaining the normal Button hit box and interaction.
+    bool const pressed = ImGui::Button("##ExperimentalInfo", buttonSize);
+    auto const minimum = ImGui::GetItemRectMin();
+    auto const maximum = ImGui::GetItemRectMax();
+    auto const opticalOffset = ImGui::GetFontSize() * 0.07f;
+    ImGui::GetWindowDrawList()->AddText(
+        ImVec2(
+            minimum.x + (maximum.x - minimum.x - textSize.x) * 0.5f,
+            minimum.y + (maximum.y - minimum.y - textSize.y) * 0.5f - opticalOffset
+        ),
+        ImGui::GetColorU32(ImGuiCol_Text),
+        label
+    );
+    return pressed;
+}
+
 // The experimental-features consent modal. On "启用" it records consent and
 // enables the feature the user was trying to turn on (pendingFeature: 1 manual,
 // 2 easy, 3 range; -1 view-only, 0 none).
@@ -269,28 +295,34 @@ void renderExperimentalConsentModal(
     MenuModel& model, MenuActions const& actions, int& pendingFeature
 ) {
     auto const displaySize = ImGui::GetIO().DisplaySize;
+    auto const popupWidth = std::min(
+        displaySize.x * 0.90f,
+        ImGui::GetFontSize() * 26.0f + ImGui::GetStyle().WindowPadding.x * 2.0f
+    );
     ImGui::SetNextWindowPos(
         ImVec2(displaySize.x * 0.5f, displaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f)
     );
+    ImGui::SetNextWindowSizeConstraints(
+        ImVec2(popupWidth, 0.0f),
+        ImVec2(popupWidth, std::numeric_limits<float>::max())
+    );
     if (!ImGui::BeginPopupModal(
             "##ExperimentalConsent", nullptr,
-            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings
+            ImGuiWindowFlags_AlwaysAutoResize
+                | ImGuiWindowFlags_NoSavedSettings
+                | ImGuiWindowFlags_NoScrollbar
         )) {
         return;
     }
     ImGui::TextUnformatted("⚠ 实验性功能 · 使用前请阅读");
     ImGui::Separator();
-    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 22.0f);
-    ImGui::TextWrapped(
-        "轻松放置 / 手动放置 / 范围放置 属于实验性辅助功能，会自动或半自动地帮你"
-        "放置投影中的方块。\n\n"
-        "由于这些功能会程序化地模拟方块放置，部分服务器的反作弊系统可能将其判定为"
-        "作弊 / 外挂行为。\n\n"
-        "· 请仅在单人世界，或已获得服主明确许可的服务器上使用。\n"
-        "· 在未经许可的服务器上使用，可能导致被踢出、封禁账号等后果。\n"
-        "· 一切风险与后果由使用者自行承担，作者与本模组概不负责。\n\n"
-        "手动逐格搭建始终是安全的做法；辅助放置仅为提升效率的实验性工具。"
-    );
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
+    ImGui::TextWrapped("轻松放置 / 手动放置 / 范围放置 属于实验性辅助功能，会自动或半自动地帮你放置投影中的方块。");
+    ImGui::TextWrapped("由于这些功能会程序化地模拟方块放置，部分服务器的反作弊系统可能将其判定为作弊 / 外挂行为。");
+    ImGui::TextWrapped("· 请仅在单人世界，或已获得服主明确许可的服务器上使用。");
+    ImGui::TextWrapped("· 在未经许可的服务器上使用，可能导致被踢出、封禁账号等后果。");
+    ImGui::TextWrapped("· 一切风险与后果由使用者自行承担，作者与本模组概不负责。");
+    ImGui::TextWrapped("手动逐格搭建始终是安全的做法；辅助放置仅为提升效率的实验性工具。");
     ImGui::PopTextWrapPos();
     ImGui::Separator();
     if (model.experimentalConsent) {
@@ -327,13 +359,6 @@ void renderExperimentalConsentModal(
 void renderExperimentalPage(MenuModel& model, MenuActions const& actions, UiMetrics const& metrics) {
     static int pendingConsentFeature = 0;
     renderSection("##AssistedPlacement", "辅助放置", metrics, [&] {
-        // A placement hotkey pressed before consent routed us here and asked to
-        // open the popup for the feature it was trying to enable.
-        if (model.consentPopupRequest != 0) {
-            pendingConsentFeature = model.consentPopupRequest;
-            model.consentPopupRequest = 0;
-            ImGui::OpenPopup("##ExperimentalConsent");
-        }
         // The说明 / consent entry sits at the very top and is coloured to stand out.
         {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.72f, 0.20f, 0.22f, 1.0f));
@@ -342,7 +367,7 @@ void renderExperimentalPage(MenuModel& model, MenuActions const& actions, UiMetr
             char const* label = model.experimentalConsent
                 ? "查看实验性功能说明"
                 : "⚠ 实验性功能说明（点此阅读并启用）";
-            if (ImGui::Button(label)) {
+            if (renderExperimentalInfoButton(label)) {
                 pendingConsentFeature = -1;
                 ImGui::OpenPopup("##ExperimentalConsent");
             }

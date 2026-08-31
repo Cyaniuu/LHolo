@@ -54,15 +54,6 @@ bool loadSettingsFile(std::filesystem::path const& path, Settings& out) {
         = json.value("layerIncreaseHotkeyModifiers", out.layerIncreaseHotkeyModifiers);
     out.layerDecreaseHotkeyModifiers
         = json.value("layerDecreaseHotkeyModifiers", out.layerDecreaseHotkeyModifiers);
-    out.toggleManualHotkey = json.value("toggleManualHotkey", out.toggleManualHotkey);
-    out.toggleManualHotkeyModifiers
-        = json.value("toggleManualHotkeyModifiers", out.toggleManualHotkeyModifiers);
-    out.toggleEasyHotkey = json.value("toggleEasyHotkey", out.toggleEasyHotkey);
-    out.toggleEasyHotkeyModifiers
-        = json.value("toggleEasyHotkeyModifiers", out.toggleEasyHotkeyModifiers);
-    out.toggleRangeHotkey = json.value("toggleRangeHotkey", out.toggleRangeHotkey);
-    out.toggleRangeHotkeyModifiers
-        = json.value("toggleRangeHotkeyModifiers", out.toggleRangeHotkeyModifiers);
     out.loadProjectionHotkey = json.value("loadProjectionHotkey", out.loadProjectionHotkey);
     out.loadProjectionHotkeyModifiers
         = json.value("loadProjectionHotkeyModifiers", out.loadProjectionHotkeyModifiers);
@@ -145,12 +136,6 @@ void saveSettingsFile(std::filesystem::path const& path, Settings const& setting
         {"layerDecreaseHotkey", settings.layerDecreaseHotkey},
         {"layerIncreaseHotkeyModifiers", settings.layerIncreaseHotkeyModifiers},
         {"layerDecreaseHotkeyModifiers", settings.layerDecreaseHotkeyModifiers},
-        {"toggleManualHotkey", settings.toggleManualHotkey},
-        {"toggleManualHotkeyModifiers", settings.toggleManualHotkeyModifiers},
-        {"toggleEasyHotkey", settings.toggleEasyHotkey},
-        {"toggleEasyHotkeyModifiers", settings.toggleEasyHotkeyModifiers},
-        {"toggleRangeHotkey", settings.toggleRangeHotkey},
-        {"toggleRangeHotkeyModifiers", settings.toggleRangeHotkeyModifiers},
         {"loadProjectionHotkey", settings.loadProjectionHotkey},
         {"loadProjectionHotkeyModifiers", settings.loadProjectionHotkeyModifiers},
         {"closeProjectionHotkey", settings.closeProjectionHotkey},

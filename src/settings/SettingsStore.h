@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "input/HotkeyTypes.h"
+
 #include <array>
 #include <filesystem>
 #include <string>
@@ -43,19 +45,13 @@ struct Settings {
     int layerDecreaseHotkey{0x28}; // VK_DOWN
     int layerIncreaseHotkeyModifiers{2};
     int layerDecreaseHotkeyModifiers{2};
-    int toggleManualHotkey{'R'};
-    int toggleManualHotkeyModifiers{0};
-    int toggleEasyHotkey{'F'};
-    int toggleEasyHotkeyModifiers{0};
-    int toggleRangeHotkey{'Y'};
-    int toggleRangeHotkeyModifiers{0};
     int loadProjectionHotkey{0};
     int loadProjectionHotkeyModifiers{0};
     int closeProjectionHotkey{0};
     int closeProjectionHotkeyModifiers{0};
     // X-, X+, Z-, Z+, Y+, Y-
-    std::array<int, 6> moveHotkeys{0x25, 0x27, 0x26, 0x28, 0x26, 0x28};
-    std::array<int, 6> moveHotkeyModifiers{1, 1, 1, 1, 4, 4};
+    std::array<int, input::kMoveHotkeyCount> moveHotkeys{0x25, 0x27, 0x26, 0x28, 0x26, 0x28};
+    std::array<int, input::kMoveHotkeyCount> moveHotkeyModifiers{1, 1, 1, 1, 4, 4};
     bool hasSavedProjection{false};
     int savedAnchorX{};
     int savedAnchorY{};

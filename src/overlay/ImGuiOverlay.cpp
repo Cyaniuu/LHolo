@@ -171,6 +171,20 @@ void loadFonts() {
     } else {
         io.Fonts->AddFontDefault();
     }
+
+    // Chinese glyph ranges do not include the warning sign used by the
+    // experimental-feature notice. Merge that single glyph from Windows'
+    // symbol font so the original label is rendered instead of as '?'.
+    auto const symbolFont = "C:\\Windows\\Fonts\\seguisym.ttf";
+    if (std::filesystem::exists(symbolFont)) {
+        static constexpr ImWchar warningGlyphRange[]{0x26A0, 0x26A0, 0};
+        ImFontConfig symbolConfig{};
+        symbolConfig.MergeMode = true;
+        symbolConfig.PixelSnapH = true;
+        symbolConfig.OversampleH = 2;
+        symbolConfig.OversampleV = 2;
+        io.Fonts->AddFontFromFileTTF(symbolFont, 36.0f, &symbolConfig, warningGlyphRange);
+    }
 }
 
 LRESULT forwardToGame(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {

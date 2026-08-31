@@ -126,6 +126,7 @@ LHolo/
 │  │  ├─ PlacementExecutor.*    轻松/手动/范围放置规划与执行
 │  │  └─ PlaceHelper.h          配置开关与 Hook 生命周期接口
 │  └─ input/
+│     ├─ HotkeyTypes.h          快捷键槽位、顺序与数量的唯一共享定义
 │     ├─ MenuInputGuard.cpp     菜单期间阻止本地玩家开始/持续破坏方块
 │     └─ MenuInputGuard.h       破坏拦截 Hook 生命周期接口
 ├─ tools/java_to_bedrock/       开发期映射生成器（运行时不需要 Java）
@@ -178,6 +179,8 @@ LHolo/
   0 的临时 UI 值不得覆盖恢复记录。
 - `ui/HotkeyFormat` 只根据显式参数生成按键名与和弦字符串，不读取会话状态；快捷键交互仍由
   `StructureLoader` 的会话状态驱动。
+- `input/HotkeyTypes` 是快捷键槽位顺序与数量的唯一来源；设置、会话状态、菜单和输入处理必须从
+  `HotkeyId`/`Count` 推导索引与数组大小，不得复制数字槽位。
 - `ui/MenuController` 负责菜单模型构建/应用、动作回调与 GUI 渲染，只通过 `StructureSession`/
   `StructureUiState` 访问状态；`StructureLoader` 保留 HUD、快捷键事件与加载入口。
 - `ui/MenuWidgets` 提供通用菜单控件（分节、值行、复选框、步进器、居中数值绘制），不读取会话状态。
@@ -804,7 +807,6 @@ mods/LHolo/config/config.json
 - `correctionSeeThrough`、`missingSeeThrough`、`projectionSeeThrough`（三类穿透显示开关，默认关闭）
 - `experimentalConsent`（辅助放置风险提示是否已确认）
 - `materialHudEnabled`、`materialHudPosition`（材料 HUD 开关与四角位置，新配置默认右下角）
-- `toggleManualHotkey`、`toggleEasyHotkey`、`toggleRangeHotkey` 及其修饰键
 - `loadProjectionHotkey`、`closeProjectionHotkey` 及其修饰键
 - HUD 开关、各项显示开关（含 `hudShowProjectedBlockName` 投影方块名称）、位置；读取时兼容旧键
   `hudShowBlockEntity`，保存时只写新键
@@ -812,7 +814,7 @@ mods/LHolo/config/config.json
 - 上次投影是否存在、文件路径、绝对锚点
 - 上次投影旋转、镜像、偏移、显示模式、显示层和分层轴
 
-普通结构变换和显示层属于当前会话；只有“恢复上次投影”记录显式跨会话保存。手动放置、轻松放置和范围放置为安全敏感的临时功能，不读取、不写入配置，每次启动均默认关闭；放置半径和投影方块破坏后的自动放置冷却时长仍持久化。纠错样式、投影透明度、GUI/HUD 和快捷键属于用户偏好，始终持久化。
+普通结构变换和显示层属于当前会话；只有“恢复上次投影”记录显式跨会话保存。手动放置、轻松放置和范围放置为安全敏感的临时功能，只能从实验性功能页面启用，不提供全局快捷键，不读取、不写入配置，每次启动均默认关闭；放置半径和投影方块破坏后的自动放置冷却时长仍持久化。纠错样式、投影透明度、GUI/HUD 和其他快捷键属于用户偏好，始终持久化。
 
 配置读取必须：
 

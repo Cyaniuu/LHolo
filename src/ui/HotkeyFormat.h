@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "input/HotkeyTypes.h"
+
 #include <string>
 
 namespace lholo::ui {

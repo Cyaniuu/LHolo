@@ -64,14 +64,11 @@
 namespace lholo::structure {
 namespace {
 
-constexpr std::size_t    kGuiHotkeyIndex             = 0;
-constexpr std::size_t    kLayerIncreaseHotkeyIndex   = 7;
-constexpr std::size_t    kLayerDecreaseHotkeyIndex   = 8;
-constexpr std::size_t    kToggleManualHotkeyIndex    = 9;
-constexpr std::size_t    kToggleEasyHotkeyIndex      = 10;
-constexpr std::size_t    kLoadProjectionHotkeyIndex  = 11;
-constexpr std::size_t    kCloseProjectionHotkeyIndex = 12;
-constexpr std::size_t    kToggleRangeHotkeyIndex     = 13;
+constexpr std::size_t kGuiHotkeyIndex = input::hotkeyIndex(input::HotkeyId::Gui);
+constexpr std::size_t kLayerIncreaseHotkeyIndex = input::hotkeyIndex(input::HotkeyId::LayerIncrease);
+constexpr std::size_t kLayerDecreaseHotkeyIndex = input::hotkeyIndex(input::HotkeyId::LayerDecrease);
+constexpr std::size_t kLoadProjectionHotkeyIndex = input::hotkeyIndex(input::HotkeyId::LoadProjection);
+constexpr std::size_t kCloseProjectionHotkeyIndex = input::hotkeyIndex(input::HotkeyId::CloseProjection);
 auto& logger() {
     return LHolo::getInstance().getSelf().getLogger();
 }
@@ -162,11 +159,11 @@ bool handleGuiHotkeyKeyDown(unsigned int virtualKey) {
     }
     if (isGuiVisible()) return false;
 
-    for (std::size_t index = 0; index < detail::StructureUiState::kMoveHotkeyCount; ++index) {
-        auto const hotkey = uiState().inputHotkey(index + 1);
+    for (std::size_t index = 0; index < input::kMoveHotkeyCount; ++index) {
+        auto const hotkey = uiState().inputHotkey(index + input::kMoveHotkeyFirst);
         if (hotkey.key == virtualKey && hotkey.modifiers == modifiers) {
             if (GetTickCount64() >= uiState().ignoreHotkeyUntil()
-                && uiState().tryPressHotkey(index + 1)) {
+                && uiState().tryPressHotkey(index + input::kMoveHotkeyFirst)) {
                 uiState().queueMove(index);
             }
             return true;
@@ -190,33 +187,6 @@ bool handleGuiHotkeyKeyDown(unsigned int virtualKey) {
         if (GetTickCount64() >= uiState().ignoreHotkeyUntil()
             && uiState().tryPressHotkey(kLayerDecreaseHotkeyIndex)) {
             uiState().queueLayerDelta(-1);
-        }
-        return true;
-    }
-    auto const toggleManualHotkey = uiState().inputHotkey(kToggleManualHotkeyIndex);
-    if (toggleManualHotkey.key != 0 && virtualKey == toggleManualHotkey.key
-        && modifiers == toggleManualHotkey.modifiers) {
-        if (GetTickCount64() >= uiState().ignoreHotkeyUntil()
-            && uiState().tryPressHotkey(kToggleManualHotkeyIndex)) {
-            uiState().queueToggleManual();
-        }
-        return true;
-    }
-    auto const toggleEasyHotkey = uiState().inputHotkey(kToggleEasyHotkeyIndex);
-    if (toggleEasyHotkey.key != 0 && virtualKey == toggleEasyHotkey.key
-        && modifiers == toggleEasyHotkey.modifiers) {
-        if (GetTickCount64() >= uiState().ignoreHotkeyUntil()
-            && uiState().tryPressHotkey(kToggleEasyHotkeyIndex)) {
-            uiState().queueToggleEasy();
-        }
-        return true;
-    }
-    auto const toggleRangeHotkey = uiState().inputHotkey(kToggleRangeHotkeyIndex);
-    if (toggleRangeHotkey.key != 0 && virtualKey == toggleRangeHotkey.key
-        && modifiers == toggleRangeHotkey.modifiers) {
-        if (GetTickCount64() >= uiState().ignoreHotkeyUntil()
-            && uiState().tryPressHotkey(kToggleRangeHotkeyIndex)) {
-            uiState().queueToggleRange();
         }
         return true;
     }
@@ -270,51 +240,6 @@ void processPendingHotkeyActions() {
     session.adjustOffsets(pending.offsetX, pending.offsetY, pending.offsetZ);
     if (layerActionEnabled) session.adjustDisplayLayer(pending.layerDelta);
 
-    // Assisted-placement modes are session-only, so a hotkey toggle shows a
-    // JE-style hint but is not persisted. Manual/easy/range stay mutually
-    // exclusive, matching the UI.
-    // Experimental assisted-placement modes require a one-time consent. A hotkey
-    // that would ENABLE one without it is refused with a hint pointing to the menu
-    // (where the consent popup lives); disabling is always allowed.
-    if (pending.toggleManual) {
-        bool const enable = !place::isManualMode();
-        if (enable && !experimentalConsentGiven()) {
-            requestExperimentalConsentPopup(1);
-        } else {
-            place::setManualMode(enable);
-            if (enable) {
-                place::setEnabled(false);
-                place::setRangeEnabled(false);
-            }
-            showActionHint(enable ? "手动放置模式：开启" : "手动放置模式：关闭");
-        }
-    }
-    if (pending.toggleEasy) {
-        bool const enable = !place::isEnabled();
-        if (enable && !experimentalConsentGiven()) {
-            requestExperimentalConsentPopup(2);
-        } else {
-            place::setEnabled(enable);
-            if (enable) {
-                place::setManualMode(false);
-                place::setRangeEnabled(false);
-            }
-            showActionHint(enable ? "轻松放置模式：开启" : "轻松放置模式：关闭");
-        }
-    }
-    if (pending.toggleRange) {
-        bool const enable = !place::isRangeEnabled();
-        if (enable && !experimentalConsentGiven()) {
-            requestExperimentalConsentPopup(3);
-        } else {
-            place::setRangeEnabled(enable);
-            if (enable) {
-                place::setManualMode(false);
-                place::setEnabled(false);
-            }
-            showActionHint(enable ? "范围放置模式：开启" : "范围放置模式：关闭");
-        }
-    }
     if (pending.loadProjection) {
         restoreSavedProjection();
         showActionHint("加载投影");
@@ -381,15 +306,6 @@ int materialHudPosition() {
 
 void setMaterialHudPosition(int position) {
     uiState().setMaterialHudPosition(position);
-}
-
-void requestExperimentalConsentPopup(int feature) {
-    uiState().requestExperimentalConsentPopup(feature);
-    if (!isGuiVisible()) requestOpenGui();
-}
-
-int consumeExperimentalConsentPopupRequest() {
-    return uiState().consumeExperimentalConsentPopupRequest();
 }
 
 void showActionHint(std::string text, std::uint64_t durationMs) {
@@ -746,28 +662,13 @@ void loadSettings() {
             std::clamp(settings.layerDecreaseHotkey, 0, 255),
             std::clamp(settings.layerDecreaseHotkeyModifiers, 0, 7)
         );
-        for (std::size_t index = 0; index < detail::StructureUiState::kMoveHotkeyCount; ++index) {
+        for (std::size_t index = 0; index < input::kMoveHotkeyCount; ++index) {
             uiState().setHotkey(
-                index + 1,
+                index + input::kMoveHotkeyFirst,
                 std::clamp(settings.moveHotkeys[index], 0, 255),
                 std::clamp(settings.moveHotkeyModifiers[index], 0, 7)
             );
         }
-        uiState().setHotkey(
-            kToggleManualHotkeyIndex,
-            std::clamp(settings.toggleManualHotkey, 0, 255),
-            std::clamp(settings.toggleManualHotkeyModifiers, 0, 7)
-        );
-        uiState().setHotkey(
-            kToggleEasyHotkeyIndex,
-            std::clamp(settings.toggleEasyHotkey, 0, 255),
-            std::clamp(settings.toggleEasyHotkeyModifiers, 0, 7)
-        );
-        uiState().setHotkey(
-            kToggleRangeHotkeyIndex,
-            std::clamp(settings.toggleRangeHotkey, 0, 255),
-            std::clamp(settings.toggleRangeHotkeyModifiers, 0, 7)
-        );
         uiState().setHotkey(
             kLoadProjectionHotkeyIndex,
             std::clamp(settings.loadProjectionHotkey, 0, 255),
@@ -848,19 +749,10 @@ void saveSettings() {
         settings.layerIncreaseHotkeyModifiers = layerIncreaseHotkey.modifiers;
         settings.layerDecreaseHotkeyModifiers = layerDecreaseHotkey.modifiers;
         for (std::size_t index = 0; index < settings.moveHotkeys.size(); ++index) {
-            auto const moveHotkey = uiState().hotkey(index + 1);
+            auto const moveHotkey = uiState().hotkey(index + input::kMoveHotkeyFirst);
             settings.moveHotkeys[index] = moveHotkey.key;
             settings.moveHotkeyModifiers[index] = moveHotkey.modifiers;
         }
-        auto const toggleManualHotkey = uiState().hotkey(kToggleManualHotkeyIndex);
-        auto const toggleEasyHotkey = uiState().hotkey(kToggleEasyHotkeyIndex);
-        auto const toggleRangeHotkey = uiState().hotkey(kToggleRangeHotkeyIndex);
-        settings.toggleManualHotkey = toggleManualHotkey.key;
-        settings.toggleManualHotkeyModifiers = toggleManualHotkey.modifiers;
-        settings.toggleEasyHotkey = toggleEasyHotkey.key;
-        settings.toggleEasyHotkeyModifiers = toggleEasyHotkey.modifiers;
-        settings.toggleRangeHotkey = toggleRangeHotkey.key;
-        settings.toggleRangeHotkeyModifiers = toggleRangeHotkey.modifiers;
         auto const loadProjectionHotkey = uiState().hotkey(kLoadProjectionHotkeyIndex);
         auto const closeProjectionHotkey = uiState().hotkey(kCloseProjectionHotkeyIndex);
         settings.loadProjectionHotkey = loadProjectionHotkey.key;

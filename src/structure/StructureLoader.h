@@ -93,10 +93,6 @@ void setMaterialHudEnabled(bool enabled);
 // (same encoding as the projection HUD position). Default 3.
 int  materialHudPosition();
 void setMaterialHudPosition(int position);
-// Ask the menu to jump to the experimental page and open the consent popup (used
-// by a placement hotkey pressed before consent). feature: 1 manual, 2 easy.
-void requestExperimentalConsentPopup(int feature);
-int  consumeExperimentalConsentPopupRequest();
 void renderGui();
 void requestMaterialList();
 void loadSettings();

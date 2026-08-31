@@ -166,7 +166,6 @@ void testSettingsStore() {
     settings.correctionSeeThrough = true;
     settings.materialHudEnabled = true;
     settings.materialHudPosition = 3;
-    settings.toggleRangeHotkey = 'G';
     settings.moveHotkeys[4] = 0x57; // W
     settings.hasSavedProjection = true;
     settings.savedAnchorX = 12;
@@ -177,6 +176,9 @@ void testSettingsStore() {
         std::ostringstream contents;
         contents << saved.rdbuf();
         LHOLO_CHECK(contents.str().find("\"version\": 11") != std::string::npos);
+        LHOLO_CHECK(contents.str().find("toggleManualHotkey") == std::string::npos);
+        LHOLO_CHECK(contents.str().find("toggleEasyHotkey") == std::string::npos);
+        LHOLO_CHECK(contents.str().find("toggleRangeHotkey") == std::string::npos);
     }
 
     lholo::settings::Settings loaded;
@@ -190,7 +192,6 @@ void testSettingsStore() {
     LHOLO_CHECK(loaded.correctionSeeThrough);
     LHOLO_CHECK(loaded.materialHudEnabled);
     LHOLO_CHECK(loaded.materialHudPosition == 3);
-    LHOLO_CHECK(loaded.toggleRangeHotkey == 'G');
     LHOLO_CHECK(loaded.moveHotkeys[4] == 0x57);
     LHOLO_CHECK(loaded.hasSavedProjection);
     LHOLO_CHECK(loaded.savedAnchorX == 12);
@@ -200,7 +201,7 @@ void testSettingsStore() {
     // block-entity label migrates to the projected-block label.
     {
         std::ofstream legacy(path, std::ios::trunc);
-        legacy << R"({"hudShowBlockEntity":false})";
+        legacy << R"({"hudShowBlockEntity":false,"toggleManualHotkey":82,"toggleEasyHotkey":70,"toggleRangeHotkey":89})";
     }
     lholo::settings::Settings migrated;
     LHOLO_CHECK(lholo::settings::loadSettingsFile(path, migrated));
@@ -210,7 +211,6 @@ void testSettingsStore() {
     LHOLO_CHECK(!migrated.correctionSeeThrough);
     LHOLO_CHECK(!migrated.materialHudEnabled);
     LHOLO_CHECK(migrated.materialHudPosition == 3);
-    LHOLO_CHECK(migrated.toggleRangeHotkey == 'Y');
 
     lholo::settings::Settings missing;
     std::filesystem::remove(path, error);
@@ -393,18 +393,25 @@ void testStructureUiState() {
     LHOLO_CHECK(appliedHud.uiScale == 1.5f);
 
     state.resetHotkeys();
-    LHOLO_CHECK(state.hotkey(0).key == 'M');
-    LHOLO_CHECK(state.hotkey(0).modifiers == lholo::ui::kHotkeyModifierAlt);
-    LHOLO_CHECK(state.hotkey(1).key == VK_LEFT);
-    LHOLO_CHECK(state.hotkey(7).key == VK_UP);
-    LHOLO_CHECK(state.hotkey(13).key == 'Y');
+    auto const guiSlot = lholo::input::hotkeyIndex(lholo::input::HotkeyId::Gui);
+    auto const moveXMinusSlot = lholo::input::hotkeyIndex(lholo::input::HotkeyId::MoveXMinus);
+    auto const moveXPlusSlot = lholo::input::hotkeyIndex(lholo::input::HotkeyId::MoveXPlus);
+    auto const layerIncreaseSlot = lholo::input::hotkeyIndex(lholo::input::HotkeyId::LayerIncrease);
+    auto const loadProjectionSlot = lholo::input::hotkeyIndex(lholo::input::HotkeyId::LoadProjection);
+    auto const closeProjectionSlot = lholo::input::hotkeyIndex(lholo::input::HotkeyId::CloseProjection);
+    LHOLO_CHECK(state.hotkey(guiSlot).key == 'M');
+    LHOLO_CHECK(state.hotkey(guiSlot).modifiers == lholo::ui::kHotkeyModifierAlt);
+    LHOLO_CHECK(state.hotkey(moveXMinusSlot).key == VK_LEFT);
+    LHOLO_CHECK(state.hotkey(layerIncreaseSlot).key == VK_UP);
+    LHOLO_CHECK(state.hotkey(loadProjectionSlot).key == 0);
+    LHOLO_CHECK(state.hotkey(closeProjectionSlot).key == 0);
 
-    state.beginHotkeyCapture(1);
-    LHOLO_CHECK(state.capturingHotkey() == 1);
-    state.setHotkey(2, 'K', lholo::ui::kHotkeyModifierControl);
-    state.bindCapturedHotkey(1, 'K', lholo::ui::kHotkeyModifierControl);
-    LHOLO_CHECK(state.hotkey(1).key == 'K');
-    LHOLO_CHECK(state.hotkey(2).key == 0);
+    state.beginHotkeyCapture(moveXMinusSlot);
+    LHOLO_CHECK(state.capturingHotkey() == moveXMinusSlot);
+    state.setHotkey(moveXPlusSlot, 'K', lholo::ui::kHotkeyModifierControl);
+    state.bindCapturedHotkey(moveXMinusSlot, 'K', lholo::ui::kHotkeyModifierControl);
+    LHOLO_CHECK(state.hotkey(moveXMinusSlot).key == 'K');
+    LHOLO_CHECK(state.hotkey(moveXPlusSlot).key == 0);
     LHOLO_CHECK(!state.capturingHotkey());
 
     state.setControlHeld(true);
@@ -417,8 +424,8 @@ void testStructureUiState() {
     state.setShiftHeld(false);
 
     state.resetHotkeys();
-    LHOLO_CHECK(state.tryPressHotkey(0));
-    LHOLO_CHECK(!state.tryPressHotkey(0));
+    LHOLO_CHECK(state.tryPressHotkey(guiSlot));
+    LHOLO_CHECK(!state.tryPressHotkey(guiSlot));
     LHOLO_CHECK(state.releaseHotkeysForKey('M', 100));
     LHOLO_CHECK(state.releaseHotkeysForKey('M', 150));
     LHOLO_CHECK(!state.releaseHotkeysForKey('M', 201));
@@ -426,14 +433,16 @@ void testStructureUiState() {
     state.queueMove(0);
     state.queueMove(4);
     state.queueLayerDelta(-1);
-    state.queueToggleRange();
+    state.queueLoadProjection();
+    state.queueCloseProjection();
     state.requestSettingsSave();
     auto const pending = state.consumePendingHotkeyActions();
     LHOLO_CHECK(pending.offsetX == -1);
     LHOLO_CHECK(pending.offsetY == 1);
     LHOLO_CHECK(pending.offsetZ == 0);
     LHOLO_CHECK(pending.layerDelta == -1);
-    LHOLO_CHECK(pending.toggleRange);
+    LHOLO_CHECK(pending.loadProjection);
+    LHOLO_CHECK(pending.closeProjection);
     LHOLO_CHECK(pending.settingsSave);
 
     state.clearMaterials();
@@ -472,12 +481,10 @@ void testStructureUiState() {
     state.setExperimentalConsentGiven(true);
     state.setMaterialHudEnabled(true);
     state.setMaterialHudPosition(3);
-    state.requestExperimentalConsentPopup(3);
     state.setActionHint("test", 1234);
     LHOLO_CHECK(state.experimentalConsentGiven());
     LHOLO_CHECK(state.materialHudEnabled());
     LHOLO_CHECK(state.materialHudPosition() == 3);
-    LHOLO_CHECK(state.consumeExperimentalConsentPopupRequest() == 3);
     auto const hint = state.actionHint();
     LHOLO_CHECK(hint.text == "test");
     LHOLO_CHECK(hint.expiry == 1234);
