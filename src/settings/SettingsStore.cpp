@@ -24,7 +24,6 @@ bool loadSettingsFile(std::filesystem::path const& path, Settings& out) {
     out.structureBoundsEnabled = json.value("structureBoundsEnabled", out.structureBoundsEnabled);
     out.correctionSeeThrough = json.value("correctionSeeThrough", out.correctionSeeThrough);
     out.missingSeeThrough = json.value("missingSeeThrough", out.missingSeeThrough);
-    out.projectionSeeThrough = json.value("projectionSeeThrough", out.projectionSeeThrough);
     out.experimentalConsent = json.value("experimentalConsent", out.experimentalConsent);
     out.materialHudEnabled = json.value("materialHudEnabled", out.materialHudEnabled);
     out.materialHudPosition = json.value("materialHudPosition", out.materialHudPosition);
@@ -114,7 +113,6 @@ void saveSettingsFile(std::filesystem::path const& path, Settings const& setting
         {"structureBoundsEnabled", settings.structureBoundsEnabled},
         {"correctionSeeThrough", settings.correctionSeeThrough},
         {"missingSeeThrough", settings.missingSeeThrough},
-        {"projectionSeeThrough", settings.projectionSeeThrough},
         {"experimentalConsent", settings.experimentalConsent},
         {"materialHudEnabled", settings.materialHudEnabled},
         {"materialHudPosition", settings.materialHudPosition},

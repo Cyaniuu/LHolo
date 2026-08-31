@@ -28,6 +28,8 @@ class CompoundTag;
 
 namespace lholo::structure {
 
+inline constexpr std::uint64_t kProjectionLifecycleHintDurationMs = 2500;
+
 struct LoadedStructure {
     struct RegionBox {
         int x{};
@@ -74,6 +76,9 @@ bool handleGuiHotkeyKeyUp(unsigned int virtualKey);
 void resetHotkeyState();
 // Present-frame control plane for deferred world-lifecycle and hotkey actions.
 void processPendingActions();
+// Invalidates world-derived HUD snapshots after a dimension change while
+// preserving the loaded structure and all HUD preferences.
+void resetDimensionSession();
 bool hasHudInfo();
 void renderHud();
 // Current-visible-range material HUD: missing projected cells vs. inventory.

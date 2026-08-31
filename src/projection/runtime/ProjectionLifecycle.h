@@ -20,6 +20,13 @@ namespace lholo::projection::detail {
 
 struct ProjectionState;
 
+enum class ProjectionContextStatus : unsigned char {
+    Current,
+    DimensionChanged,
+    Unavailable,
+    WorldChanged,
+};
+
 bool prepareProjectionState(
     ProjectionState&                              state,
     BaseActorRenderContext&                       renderContext,
@@ -27,8 +34,9 @@ bool prepareProjectionState(
 );
 
 void resetProjectionState(ProjectionState& state);
+void suspendProjectionState(ProjectionState& state);
 
-bool projectionContextMatches(
+ProjectionContextStatus classifyProjectionContext(
     ProjectionState const& state,
     IClientInstance&       client,
     Actor*                 player

@@ -447,9 +447,6 @@ void renderRenderPage(MenuModel& model, MenuActions const& actions, UiMetrics co
             }
         });
         renderCheckboxRow("##RenderBounds", "显示整体结构边框", model.structureBoundsEnabled, metrics);
-        renderCheckboxRow(
-            "##ProjectionSeeThrough", "投影方块穿透显示（X 光）", model.projectionSeeThrough, metrics
-        );
     });
 
     renderSection("##LayerSettings", "分层显示设置", metrics, [&] {

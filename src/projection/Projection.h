@@ -43,13 +43,12 @@ bool getCorrectionSeeThrough();
 void setCorrectionSeeThrough(bool enabled);
 bool getMissingSeeThrough();
 void setMissingSeeThrough(bool enabled);
-bool getProjectionSeeThrough();
-void setProjectionSeeThrough(bool enabled);
 void requestNextStructureAnchor(int x, int y, int z);
 void cancelNextStructureAnchorRequest();
 // Consumes the lightweight signal produced by the existing LevelListener when
 // the active world is destroyed. Heavy cleanup runs outside the callback.
 bool consumeWorldExitRequest();
+bool isDimensionSuspended();
 BuildProgress getBuildProgress();
 // Lightweight version query followed by a conditional snapshot capture. This
 // keeps ProjectionState and its lock private while avoiding a large byte-vector

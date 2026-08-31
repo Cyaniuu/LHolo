@@ -34,6 +34,7 @@ struct BuildProgress {
 // The session mutex and mutable ProjectionState remain private to projection.
 struct MaterialProgressKey {
     std::uint64_t structureGeneration{};
+    std::uint64_t activationGeneration{};
     std::uint64_t progressRevision{};
     int           layerDisplayMode{};
     int           displayLayer{};

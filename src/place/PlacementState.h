@@ -94,6 +94,7 @@ public:
     [[nodiscard]] std::string aimedProjectedBlockName() const;
     void setAimedProjectedBlockName(std::string name);
 
+    void resetDimensionSession();
     void resetWorldSession();
 
 private:

@@ -254,6 +254,10 @@ std::string getAimedProjectedBlockName() {
     return placementState().aimedProjectedBlockName();
 }
 
+void resetDimensionSession() {
+    placementState().resetDimensionSession();
+}
+
 void resetWorldSession() {
     placementState().resetWorldSession();
 }

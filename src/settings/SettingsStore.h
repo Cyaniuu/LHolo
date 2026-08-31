@@ -23,7 +23,6 @@ struct Settings {
     bool structureBoundsEnabled{true};
     bool correctionSeeThrough{false};
     bool missingSeeThrough{false};
-    bool projectionSeeThrough{false};
     bool experimentalConsent{false};
     bool materialHudEnabled{false};
     int materialHudPosition{3};

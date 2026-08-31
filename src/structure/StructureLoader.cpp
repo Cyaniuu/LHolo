@@ -69,8 +69,14 @@ constexpr std::size_t kLayerIncreaseHotkeyIndex = input::hotkeyIndex(input::Hotk
 constexpr std::size_t kLayerDecreaseHotkeyIndex = input::hotkeyIndex(input::HotkeyId::LayerDecrease);
 constexpr std::size_t kLoadProjectionHotkeyIndex = input::hotkeyIndex(input::HotkeyId::LoadProjection);
 constexpr std::size_t kCloseProjectionHotkeyIndex = input::hotkeyIndex(input::HotkeyId::CloseProjection);
+constexpr float kActionHintVerticalScreenRatio = 0.80f;
 auto& logger() {
     return LHolo::getInstance().getSelf().getLogger();
+}
+
+bool hudContextAvailable() {
+    auto client = ll::service::getClientInstance();
+    return client && client->getLocalPlayer() && !projection::isDimensionSuspended();
 }
 
 auto& uiState() {
@@ -242,6 +248,7 @@ void processPendingActions() {
         place::resetWorldSession();
         capture::clear();
         resetWorldSession();
+        showActionHint("已退出世界，投影已关闭", kProjectionLifecycleHintDurationMs);
         return;
     }
 
@@ -266,7 +273,12 @@ void processPendingActions() {
     if (changed) saveSettings();
 }
 
+void resetDimensionSession() {
+    uiState().clearMaterialHud();
+}
+
 bool hasHudInfo() {
+    if (!hudContextAvailable()) return false;
     if (!detail::StructureSession::getInstance().hasLoaded()) return false;
     // The material HUD renders independently of the projection HUD, so the
     // overlay must draw when it is enabled even if the projection HUD is off.
@@ -346,7 +358,9 @@ void renderActionHint() {
 
     // Centered horizontally, sitting just above the hotbar like JE's action bar.
     ImGui::SetNextWindowPos(
-        ImVec2(displaySize.x * 0.5f, displaySize.y * 0.76f), ImGuiCond_Always, ImVec2(0.5f, 0.5f)
+        ImVec2(displaySize.x * 0.5f, displaySize.y * kActionHintVerticalScreenRatio),
+        ImGuiCond_Always,
+        ImVec2(0.5f, 0.5f)
     );
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.36f, 0.20f, 0.42f, 0.86f * alpha));
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, alpha));
@@ -372,6 +386,7 @@ void renderActionHint() {
 
 void renderHud() {
     if (isGuiVisible()) return;
+    if (!hudContextAvailable()) return;
     auto const hud = uiState().hud();
     if (!hud.enabled) return;
     auto const showFileName = hud.showFileName;
@@ -514,6 +529,7 @@ void renderHud() {
 
 void renderMaterialHud() {
     if (isGuiVisible()) return;
+    if (!hudContextAvailable()) return;
     if (!materialHudEnabled()) return;
     auto const hud = uiState().hud();
     if (!detail::StructureSession::getInstance().hasLoaded()) return;
@@ -631,7 +647,6 @@ void loadSettings() {
         projection::setStructureBoundsEnabled(settings.structureBoundsEnabled);
         projection::setCorrectionSeeThrough(settings.correctionSeeThrough);
         projection::setMissingSeeThrough(settings.missingSeeThrough);
-        projection::setProjectionSeeThrough(settings.projectionSeeThrough);
         setExperimentalConsentGiven(settings.experimentalConsent);
         setMaterialHudEnabled(settings.materialHudEnabled);
         setMaterialHudPosition(settings.materialHudPosition);
@@ -734,7 +749,6 @@ void saveSettings() {
         settings.structureBoundsEnabled = projection::getStructureBoundsEnabled();
         settings.correctionSeeThrough = projection::getCorrectionSeeThrough();
         settings.missingSeeThrough = projection::getMissingSeeThrough();
-        settings.projectionSeeThrough = projection::getProjectionSeeThrough();
         settings.experimentalConsent = experimentalConsentGiven();
         settings.materialHudEnabled = materialHudEnabled();
         settings.materialHudPosition = materialHudPosition();

@@ -79,7 +79,6 @@ struct MenuModel {
     bool structureBoundsEnabled{};
     bool correctionSeeThrough{};
     bool missingSeeThrough{};
-    bool projectionSeeThrough{};
     bool easyPlaceEnabled{};
     bool manualPlace{};
     bool rangeEnabled{};

@@ -38,7 +38,8 @@ LHolo 的投影、纠错、HUD 和菜单都只存在于客户端，不产生碰�
 - 默认显示层：`Alt + ↑/↓`；“完整结构”模式下按键无效。
 - 支持保存和恢复上次投影文件、锚点及当时的变换/分层参数。
 - “创建结构”页支持用玩家脚下位置或手动 XYZ 设置包含端点的选区，以红色整体线框持续显示，并通过原版结构 API 导出 `.mcstructure`。目前只提供客户端模式，且只读取当前已加载范围；实体默认不包含。
-- 退出世界、切换存档或失去有效客户端上下文时清理投影，禁止跨世界复用世界对象。
+- 退出世界、切换存档或失去有效客户端上下文时清理投影，禁止跨世界复用世界对象；完成清理后在底部提示投影已关闭。
+- 仅切换维度时保留已加载结构、锚点、变换、HUD 配置和辅助放置模式。投影与原维度绑定：进入其他维度时释放旧维度运行资源、隐藏投影及 HUD，并在底部提示投影已暂停；返回原维度并成功按原锚点重建后提示投影已恢复，材料 HUD 随恢复后的投影重新统计。投影生命周期状态提示均显示 2.5 秒。
 
 不在当前范围内：
 
@@ -213,8 +214,9 @@ LHolo/
 - `projection/runtime/ProjectionInvalidation.*` 对比当前帧设置与缓存值，集中处理旋转/镜像、移动、切层、透明度和
   纠错样式变化引起的 section dirty、revision、旧 Mesh 清理及可见进度重算；placement 重建仍由调用方触发。
 - `projection/runtime/ProjectionLifecycle.*` 构造尚未激活的 `ProjectionState`、解析 terrain atlas、建立 section 索引，
-  并按 Worker 停止、世界事件解绑、进度清零、资源释放的顺序执行锁内清理；锁、pending anchor 消费、
-  状态激活和解锁后的 `structure::clear()` 由 `ProjectionRenderFrame`/`ProjectionSession` 负责，门面只转发。
+  并按 Worker 停止、世界事件解绑、进度清零、资源释放的顺序执行锁内清理；它将当前上下文分类为正常、
+  维度变化、暂不可用或世界变化。锁、pending anchor 消费、状态激活、跨维度暂停/恢复和解锁后的
+  `structure::clear()` 由 `ProjectionRenderFrame`/`ProjectionSession` 负责，门面只转发。
 - `projection/runtime/ProjectionProgress.*` 保持原有 acquire/release 语义，在渲染状态计数与 GUI/HUD 读取之间发布
   无锁快照；它不扫描世界，也不自行推导纠错结果。
 - `projection/mesh/ProjectionSectionBuilder.*` 统一生成原版方块、液体代理、方块实体占位、纠错覆盖和结构边框
@@ -808,7 +810,7 @@ mods/LHolo/config/config.json
 - `structureBoundsEnabled`
 - `placementRadius`
 - `autoPlacementBreakCooldownSeconds`（0～60 秒，默认 10；只控制后续破坏产生的自动放置冷却）
-- `correctionSeeThrough`、`missingSeeThrough`、`projectionSeeThrough`（三类穿透显示开关，默认关闭）
+- `correctionSeeThrough`、`missingSeeThrough`（错误与未放置标记的穿透显示开关，默认关闭）
 - `experimentalConsent`（辅助放置风险提示是否已确认）
 - `materialHudEnabled`、`materialHudPosition`（材料 HUD 开关与四角位置，新配置默认右下角）
 - `loadProjectionHotkey`、`closeProjectionHotkey` 及其修饰键
@@ -941,7 +943,7 @@ D:\games\LeviLauncher\MC\versions\1.26.20.04\mods\LHolo
 
 1. 加载投影后退出主菜单，再进入同一世界：旧运行态不残留，可手动恢复记录。
 2. 切换到另一个世界：旧投影绝不出现。
-3. 维度切换：旧 `DimensionBlockSource` 不被继续使用。
+3. 维度切换：旧 `DimensionBlockSource` 不被继续使用；进入其他维度时投影与 HUD 隐藏，返回原维度后按原锚点自动恢复，结构和辅助放置模式不关闭。
 4. 世界加载未完成时打开菜单/恢复投影不崩溃，资源就绪后正常启用。
 
 ### 阶段 G：发布
@@ -1031,6 +1033,7 @@ D:\games\LeviLauncher\MC\versions\1.26.20.04\mods\LHolo
 - [ ] 移动整体结构时 GPU 模型不全量重建。
 - [ ] 修改样式只触发一次重建波次。
 - [ ] 退出/切换世界后投影和世界指针全部清理。
+- [ ] 切换维度后旧维度资源与坐标缓存清理，其他维度不显示投影/HUD，返回原维度后恢复且稳定帧没有额外扫描。
 
 ---
 

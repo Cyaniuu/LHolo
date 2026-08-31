@@ -26,6 +26,9 @@ struct PendingBlockChange {
 };
 
 void attachProjectionWorldEvents(Level& level, BlockSource& blockSource);
+// A dimension switch invalidates the BlockSource but not the Level. Keep the
+// Level listener attached so a later world exit still reaches normal cleanup.
+void detachProjectionDimensionEvents();
 void detachProjectionWorldEvents();
 bool consumeWorldExitRequest();
 

@@ -11,6 +11,7 @@
 #include "projection/runtime/ProjectionWorldEvents.h"
 #include "structure/StructureLoader.h"
 
+#include <atomic>
 #include <cstddef>
 #include <map>
 #include <tuple>
@@ -26,6 +27,26 @@
 
 namespace lholo::projection::detail {
 namespace {
+
+std::atomic_uint64_t sProjectionActivationGeneration{};
+
+enum class ProjectionReleaseScope : unsigned char {
+    Dimension,
+    World,
+};
+
+void releaseProjectionState(ProjectionState& state, ProjectionReleaseScope scope) {
+    // Keep teardown ordering in one place: workers may retain dimension-owned
+    // snapshots, so they must finish before listeners and state are released.
+    stopMeshWorker();
+    if (scope == ProjectionReleaseScope::Dimension) {
+        detachProjectionDimensionEvents();
+    } else {
+        detachProjectionWorldEvents();
+    }
+    resetPublishedBuildProgress();
+    state = ProjectionState{};
+}
 
 bool resolveTerrainTexture(IClientInstance& client, ProjectionState& state) {
     auto* levelRenderer = client.getLevelRenderer();
@@ -51,8 +72,13 @@ bool prepareProjectionState(
     state.client = &client;
     state.level = &player->getLevel();
     state.dimension = &player->getDimension();
+    state.dimensionId = player->getDimensionId().value();
     state.structure = std::move(loaded);
     state.structureGeneration = state.structure->generation;
+    state.activationGeneration = sProjectionActivationGeneration.fetch_add(
+        1,
+        std::memory_order_relaxed
+    ) + 1;
     state.blockTessellator = std::make_unique<BlockTessellator>(
         &player->getDimensionBlockSource()
     );
@@ -99,22 +125,32 @@ bool prepareProjectionState(
 }
 
 void resetProjectionState(ProjectionState& state) {
-    // Finish CPU mesh work before detaching world-owned objects captured by a
-    // task's private ChunkViewSource/BlockSource snapshot.
-    stopMeshWorker();
-    detachProjectionWorldEvents();
-    resetPublishedBuildProgress();
-    state = ProjectionState{};
+    releaseProjectionState(state, ProjectionReleaseScope::World);
 }
 
-bool projectionContextMatches(
+void suspendProjectionState(ProjectionState& state) {
+    // A dimension owns its BlockSource, but the Level remains the identity of
+    // the current world. Retaining only its listener preserves authoritative
+    // world-exit cleanup while all dimension-owned runtime data is released.
+    releaseProjectionState(state, ProjectionReleaseScope::Dimension);
+}
+
+ProjectionContextStatus classifyProjectionContext(
     ProjectionState const& state,
     IClientInstance&       client,
     Actor*                 player
 ) {
-    if (!player) return false;
-    return state.client == &client && state.level == &player->getLevel()
-        && state.dimension == &player->getDimension();
+    // The local player can briefly disappear while a dimension is loading.
+    // Level destruction remains the authoritative world-exit signal, so a
+    // missing player pauses rendering instead of discarding the projection.
+    if (!player) return ProjectionContextStatus::Unavailable;
+    if (state.client != &client || state.level != &player->getLevel()) {
+        return ProjectionContextStatus::WorldChanged;
+    }
+    if (state.dimension != &player->getDimension()) {
+        return ProjectionContextStatus::DimensionChanged;
+    }
+    return ProjectionContextStatus::Current;
 }
 
 } // namespace lholo::projection::detail

@@ -34,8 +34,7 @@ void submitProjectionMeshPass(
     bool                    renderAlphaLayer,
     bool                    structureBoundsEnabled,
     bool                    correctionSeeThrough,
-    bool                    missingSeeThrough,
-    bool                    projectionSeeThrough
+    bool                    missingSeeThrough
 );
 
 } // namespace lholo::projection::detail

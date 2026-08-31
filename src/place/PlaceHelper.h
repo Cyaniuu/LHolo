@@ -37,6 +37,10 @@ bool isManualMode();
 // Display name of the projected blueprint block currently under the crosshair.
 std::string getAimedProjectedBlockName();
 
+// Clears actions and coordinate-keyed caches owned by the previous dimension
+// while preserving the user's active assisted-placement modes and settings.
+void resetDimensionSession();
+
 // Clears state that belongs to the current world while preserving user
 // configuration such as placement radius and cooldown.
 void resetWorldSession();

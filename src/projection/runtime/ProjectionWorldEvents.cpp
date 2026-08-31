@@ -126,10 +126,7 @@ void attachProjectionWorldEvents(Level& level, BlockSource& blockSource) {
     }
 }
 
-void detachProjectionWorldEvents() {
-    if (auto* level = gAttachedLevel.exchange(nullptr, std::memory_order_acq_rel)) {
-        level->removeListener(gProjectionLevelListener);
-    }
+void detachProjectionDimensionEvents() {
     gAttachedChunkSource.store(nullptr, std::memory_order_release);
     if (auto* blockSource = gAttachedBlockSource.exchange(nullptr, std::memory_order_acq_rel)) {
         blockSource->removeListener(gProjectionBlockSourceListener);
@@ -137,6 +134,13 @@ void detachProjectionWorldEvents() {
     std::lock_guard lock(gPendingEventsMutex);
     gIncomingBlockChanges.clear();
     gIncomingLoadedSubChunks.clear();
+}
+
+void detachProjectionWorldEvents() {
+    if (auto* level = gAttachedLevel.exchange(nullptr, std::memory_order_acq_rel)) {
+        level->removeListener(gProjectionLevelListener);
+    }
+    detachProjectionDimensionEvents();
 }
 
 bool consumeWorldExitRequest() {

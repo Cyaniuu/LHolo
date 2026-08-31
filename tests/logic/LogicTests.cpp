@@ -352,6 +352,30 @@ void testPlacementState() {
     state.setAimedProjectedBlockName("Test projected block");
     LHOLO_CHECK(state.aimedProjectedBlockName() == "Test projected block");
 
+    state.recordRecentPlacement(recentCell, 400, 500);
+    state.suppressAutoPlacement(suppressedCell, 500);
+    state.cacheFailedPlan(failedKey, 400, 500);
+    state.resetDimensionSession();
+    LHOLO_CHECK(state.enabled());
+    LHOLO_CHECK(state.rangeEnabled());
+    LHOLO_CHECK(state.manualMode());
+    LHOLO_CHECK(!state.manualHeld());
+    LHOLO_CHECK(!state.manualPlaceRequested());
+    LHOLO_CHECK(state.manualPressAt() == 0);
+    LHOLO_CHECK(state.lastManualPlaceAt() == 0);
+    LHOLO_CHECK(state.nextPlaceAt() == 0);
+    LHOLO_CHECK(state.nextSwapAt() == 0);
+    LHOLO_CHECK(!state.recentPlacementActive(recentCell, 400));
+    LHOLO_CHECK(!state.autoPlacementSuppressionsActive(400));
+    LHOLO_CHECK(!state.autoPlacementSuppressed(suppressedCell, 400));
+    LHOLO_CHECK(!state.failedPlanCached(failedKey, 400));
+    LHOLO_CHECK(state.aimedProjectedBlockName().empty());
+    LHOLO_CHECK(state.radius() == 3);
+    LHOLO_CHECK(state.autoPlacementBreakCooldownSeconds() == 12);
+
+    state.setManualHeld(true);
+    state.setManualPlaceRequested(true);
+    state.setAimedProjectedBlockName("World projected block");
     state.suppressAutoPlacement(suppressedCell, 500);
     state.resetWorldSession();
     LHOLO_CHECK(!state.enabled());

@@ -156,10 +156,7 @@ void PlacementState::setAimedProjectedBlockName(std::string name) {
     mAimedProjectedBlockName = std::move(name);
 }
 
-void PlacementState::resetWorldSession() {
-    mEnabled.store(false, std::memory_order_release);
-    mRangeEnabled.store(false, std::memory_order_release);
-    mManualMode.store(false, std::memory_order_release);
+void PlacementState::resetDimensionSession() {
     mManualHeld.store(false, std::memory_order_release);
     mManualPlaceRequested.store(false, std::memory_order_release);
     mManualPressAt.store(0, std::memory_order_release);
@@ -174,6 +171,13 @@ void PlacementState::resetWorldSession() {
         mFailedRangePlans.clear();
     }
     setAimedProjectedBlockName({});
+}
+
+void PlacementState::resetWorldSession() {
+    mEnabled.store(false, std::memory_order_release);
+    mRangeEnabled.store(false, std::memory_order_release);
+    mManualMode.store(false, std::memory_order_release);
+    resetDimensionSession();
 }
 
 } // namespace lholo::place::detail

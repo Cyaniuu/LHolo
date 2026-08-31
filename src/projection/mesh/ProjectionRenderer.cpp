@@ -29,8 +29,8 @@ namespace lholo::projection::detail {
 
 namespace {
 
-// Temporarily turns off depth testing on a shared render material so LHolo's
-// geometry draws through world blocks (X-ray), restoring it when the scope ends.
+// Temporarily turns off depth testing on a shared render material so correction
+// overlay geometry draws through world blocks (X-ray), restoring it when the scope ends.
 // Safe because projection rendering runs synchronously on the present thread and
 // vanilla never draws between the set and the restore.
 class ScopedNoDepthTest {
@@ -105,8 +105,7 @@ void submitProjectionMeshPass(
     bool                    renderAlphaLayer,
     bool                    structureBoundsEnabled,
     bool                    correctionSeeThrough,
-    bool                    missingSeeThrough,
-    bool                    projectionSeeThrough
+    bool                    missingSeeThrough
 ) {
     auto& itemRenderer = renderContext.getItemInHandRenderer();
     auto const& blendMaterial = itemRenderer.mMatBlendBlock.get();
@@ -136,7 +135,6 @@ void submitProjectionMeshPass(
     };
     auto renderMeshes = [&](std::vector<VisibleMesh> const& meshes, mce::MaterialPtr const& material) {
         if (!material) return;
-        ScopedNoDepthTest seeThrough(material, projectionSeeThrough);
         for (auto const& visible : meshes) {
             auto& mesh = *state.sections[visible.section].meshes[visible.bucket];
             mesh.renderMesh(
@@ -206,7 +204,6 @@ void submitProjectionMeshPass(
     // Textured liquid hulls travel the proven glass path: blend-block material
     // plus the terrain atlas, sorted back to front by section.
     if (renderAlphaLayer) {
-        ScopedNoDepthTest seeThrough(blendMaterial, projectionSeeThrough);
         std::vector<std::size_t> liquidSections;
         for (std::size_t liquidSection = 0;
              liquidSection < state.liquidProxySectionMeshes.size();

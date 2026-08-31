@@ -60,14 +60,6 @@ void ProjectionSession::setMissingSeeThrough(bool enabled) {
     mMissingSeeThrough.store(enabled, std::memory_order_relaxed);
 }
 
-bool ProjectionSession::projectionSeeThrough() const {
-    return mProjectionSeeThrough.load(std::memory_order_relaxed);
-}
-
-void ProjectionSession::setProjectionSeeThrough(bool enabled) {
-    mProjectionSeeThrough.store(enabled, std::memory_order_relaxed);
-}
-
 std::optional<ProjectionAnchor> ProjectionSession::consumeAnchor() {
     if (!mPendingAnchor.exchange(false, std::memory_order_acq_rel)) return std::nullopt;
     return ProjectionAnchor{
@@ -86,6 +78,51 @@ void ProjectionSession::requestAnchor(int x, int y, int z) {
 
 void ProjectionSession::cancelAnchorRequest() {
     mPendingAnchor.store(false, std::memory_order_release);
+}
+
+void ProjectionSession::suspendForDimension(
+    std::uint64_t structureGeneration,
+    int dimensionId,
+    ProjectionAnchor anchor
+) {
+    mSuspendedStructureGeneration.store(structureGeneration, std::memory_order_relaxed);
+    mSuspendedDimensionId.store(dimensionId, std::memory_order_relaxed);
+    mSuspendedAnchorX.store(anchor.x, std::memory_order_relaxed);
+    mSuspendedAnchorY.store(anchor.y, std::memory_order_relaxed);
+    mSuspendedAnchorZ.store(anchor.z, std::memory_order_relaxed);
+    mDimensionSuspended.store(true, std::memory_order_release);
+}
+
+DimensionActivationStatus ProjectionSession::prepareDimensionActivation(
+    std::uint64_t structureGeneration,
+    int           dimensionId
+) {
+    if (!mDimensionSuspended.load(std::memory_order_acquire)) {
+        return DimensionActivationStatus::Ready;
+    }
+    if (mSuspendedStructureGeneration.load(std::memory_order_relaxed) != structureGeneration) {
+        mDimensionSuspended.store(false, std::memory_order_release);
+        return DimensionActivationStatus::Ready;
+    }
+    if (mSuspendedDimensionId.load(std::memory_order_relaxed) != dimensionId) {
+        return DimensionActivationStatus::Deferred;
+    }
+    requestAnchor(
+        mSuspendedAnchorX.load(std::memory_order_relaxed),
+        mSuspendedAnchorY.load(std::memory_order_relaxed),
+        mSuspendedAnchorZ.load(std::memory_order_relaxed)
+    );
+    // Keep the HUD suspended until the projection has actually been rebuilt.
+    // The render-frame owner clears this state only after activation succeeds.
+    return DimensionActivationStatus::Resuming;
+}
+
+bool ProjectionSession::dimensionSuspended() const {
+    return mDimensionSuspended.load(std::memory_order_acquire);
+}
+
+void ProjectionSession::cancelDimensionSuspension() {
+    mDimensionSuspended.store(false, std::memory_order_release);
 }
 
 } // namespace lholo::projection::detail

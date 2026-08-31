@@ -19,12 +19,9 @@
 #include "projection/core/ProjectionRules.h"
 #include "projection/runtime/ProjectionProgress.h"
 #include "projection/runtime/ProjectionSession.h"
-#include "projection/runtime/ProjectionLifecycle.h"
 #include "projection/runtime/ProjectionWorldEvents.h"
 #include "projection/core/ProjectionState.h"
 #include "projection/world/ProjectionQueries.h"
-
-#include "structure/StructureLoader.h"
 
 #include <vector>
 
@@ -33,6 +30,13 @@
 #include "mc/world/level/Level.h"
 
 namespace lholo::projection {
+namespace {
+
+bool projectionWorldViewMatches(detail::ProjectionState const& state, LocalPlayer& player) {
+    return state.level == &player.getLevel() && state.dimension == &player.getDimension();
+}
+
+} // namespace
 
 bool installHook() {
     return detail::projectionController().installHooks();
@@ -94,14 +98,6 @@ void setMissingSeeThrough(bool enabled) {
     detail::ProjectionSession::getInstance().setMissingSeeThrough(enabled);
 }
 
-bool getProjectionSeeThrough() {
-    return detail::ProjectionSession::getInstance().projectionSeeThrough();
-}
-
-void setProjectionSeeThrough(bool enabled) {
-    detail::ProjectionSession::getInstance().setProjectionSeeThrough(enabled);
-}
-
 void requestNextStructureAnchor(int x, int y, int z) {
     detail::ProjectionSession::getInstance().requestAnchor(x, y, z);
 }
@@ -112,6 +108,10 @@ void cancelNextStructureAnchorRequest() {
 
 bool consumeWorldExitRequest() {
     return detail::consumeWorldExitRequest();
+}
+
+bool isDimensionSuspended() {
+    return detail::ProjectionSession::getInstance().dimensionSuspended();
 }
 
 BuildProgress getBuildProgress() {
@@ -129,6 +129,7 @@ std::optional<MaterialProgressKey> getMaterialProgressKey() {
             }
             return MaterialProgressKey{
                 state.structureGeneration,
+                state.activationGeneration,
                 state.progressRevision,
                 state.cachedLayerDisplayMode,
                 state.cachedDisplayLayer,
@@ -147,6 +148,7 @@ std::optional<MaterialProgressSnapshot> captureMaterialProgress(
             auto const matches = state.enabled && state.structure
                 && state.correctionScanCursor == state.structure->renderBlocks.size()
                 && state.structureGeneration == expected.structureGeneration
+                && state.activationGeneration == expected.activationGeneration
                 && state.progressRevision == expected.progressRevision
                 && state.cachedLayerDisplayMode == expected.layerDisplayMode
                 && state.cachedDisplayLayer == expected.displayLayer
@@ -166,7 +168,7 @@ std::vector<BrokenProjectionCell> takeBrokenProjectionCells(LocalPlayer& player)
     detail::ProjectionSession::getInstance().withLockedState(
         [&](detail::ProjectionState& state, overlay::BoundsWireframe&) {
             if (!state.enabled || !state.structure) return;
-            if (state.level != &player.getLevel() || state.dimension != &player.getDimension()) return;
+            if (!projectionWorldViewMatches(state, player)) return;
             result.swap(state.pendingBrokenCells);
         }
     );
@@ -175,37 +177,25 @@ std::vector<BrokenProjectionCell> takeBrokenProjectionCells(LocalPlayer& player)
 
 ProjectionQuery queryProjection(LocalPlayer& player, BlockPos const& worldPos) {
     ProjectionQuery result{nullptr, false};
-    bool clearStructure = false;
     detail::ProjectionSession::getInstance().withLockedState(
         [&](detail::ProjectionState& state, overlay::BoundsWireframe&) {
             if (!state.enabled || !state.structure) return;
-            if (state.level != &player.getLevel() || state.dimension != &player.getDimension()) {
-                detail::resetProjectionState(state);
-                clearStructure = true;
-                return;
-            }
+            if (!projectionWorldViewMatches(state, player)) return;
             result = detail::queryProjectionCell(state, worldPos);
         }
     );
-    if (clearStructure) structure::clear();
     return result;
 }
 
 std::vector<RangeCandidate> queryMissingCellsInRange(LocalPlayer& player, Vec3 const& center, float radius) {
     std::vector<RangeCandidate> result;
-    bool clearStructure = false;
     detail::ProjectionSession::getInstance().withLockedState(
         [&](detail::ProjectionState& state, overlay::BoundsWireframe&) {
             if (!state.enabled || !state.structure) return;
-            if (state.level != &player.getLevel() || state.dimension != &player.getDimension()) {
-                detail::resetProjectionState(state);
-                clearStructure = true;
-                return;
-            }
+            if (!projectionWorldViewMatches(state, player)) return;
             result = detail::queryMissingProjectionCells(state, center, radius);
         }
     );
-    if (clearStructure) structure::clear();
     return result;
 }
 

@@ -46,6 +46,7 @@ void ProjectionController::disableProjection() {
     // A requested restore anchor belongs only to the projection being
     // activated. Explicit disable/close must not leak it into a later load.
     session.cancelAnchorRequest();
+    session.cancelDimensionSuspension();
 }
 
 } // namespace lholo::projection::detail

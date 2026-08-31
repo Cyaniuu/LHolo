@@ -23,6 +23,7 @@
 #include "projection/world/ProjectionPlacement.h"
 
 #include "overlay/BoundsWireframe.h"
+#include "place/PlaceHelper.h"
 #include "plugin/LHolo.h"
 #include "structure/capture/StructureCapture.h"
 #include "structure/StructureLoader.h"
@@ -106,8 +107,20 @@ bool enableStructureProjection(
     return true;
 }
 
-bool contextIsValid(ProjectionState const& state, IClientInstance& client, Actor* player) {
-    return projectionContextMatches(state, client, player);
+void suspendProjectionDimension(ProjectionState& state) {
+    auto const anchor = state.anchor;
+    place::resetDimensionSession();
+    structure::resetDimensionSession();
+    ProjectionSession::getInstance().suspendForDimension(
+        state.structureGeneration,
+        state.dimensionId,
+        ProjectionAnchor{anchor.x, anchor.y, anchor.z}
+    );
+    suspendProjectionState(state);
+    structure::showActionHint(
+        "维度发生变化，投影已暂停",
+        structure::kProjectionLifecycleHintDurationMs
+    );
 }
 
 void renderProjection(
@@ -290,8 +303,7 @@ void renderProjection(
             renderAlphaLayer,
             ProjectionSession::getInstance().structureBoundsEnabled(),
             ProjectionSession::getInstance().correctionSeeThrough(),
-            ProjectionSession::getInstance().missingSeeThrough(),
-            ProjectionSession::getInstance().projectionSeeThrough()
+            ProjectionSession::getInstance().missingSeeThrough()
         );
     } catch (std::exception const& exception) {
         logger().error("Projection immediate mesh submission failed: {}", exception.what());
@@ -367,18 +379,47 @@ void renderProjectionFrame(BaseActorRenderContext& renderContext, bool renderAlp
             captureBounds.render(renderContext, renderAlphaLayer);
 
             if (auto loaded = structure::getLoaded(); loaded && loaded->generation != state.structureGeneration) {
+                auto& client = renderContext.getClient();
+                auto* player = client.getLocalPlayer();
+                if (!player) return;
+                auto& session = ProjectionSession::getInstance();
+                auto const activationStatus = session.prepareDimensionActivation(
+                    loaded->generation,
+                    player->getDimensionId().value()
+                );
+                if (activationStatus == DimensionActivationStatus::Deferred) {
+                    return;
+                }
                 resetProjectionState(state);
                 if (!enableStructureProjection(state, renderContext, std::move(loaded))) {
                     resetProjectionState(state);
                     logger().error("Could not enable loaded structure projection");
+                } else {
+                    session.cancelDimensionSuspension();
+                    if (activationStatus == DimensionActivationStatus::Resuming) {
+                        structure::showActionHint(
+                            "已返回投影所在维度，投影已恢复",
+                            structure::kProjectionLifecycleHintDurationMs
+                        );
+                    }
                 }
             }
 
             if (!state.enabled) return;
             auto& client = renderContext.getClient();
-            if (!contextIsValid(state, client, client.getLocalPlayer())) {
+            auto const contextStatus = classifyProjectionContext(
+                state,
+                client,
+                client.getLocalPlayer()
+            );
+            if (contextStatus == ProjectionContextStatus::Unavailable) return;
+            if (contextStatus == ProjectionContextStatus::WorldChanged) {
                 resetProjectionState(state);
                 clearStructure = true;
+                return;
+            }
+            if (contextStatus == ProjectionContextStatus::DimensionChanged) {
+                suspendProjectionDimension(state);
                 return;
             }
             renderProjection(state, renderContext, renderAlphaLayer);

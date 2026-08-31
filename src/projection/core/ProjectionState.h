@@ -55,10 +55,12 @@ struct ProjectionState {
     IClientInstance*                client{};
     Level*                          level{};
     Dimension*                      dimension{};
+    int                             dimensionId{};
     std::optional<mce::TexturePtr>  terrainTexture;
     std::optional<TextureVariant>   terrainTextureVariant;
     std::shared_ptr<structure::LoadedStructure const> structure;
     std::uint64_t                   structureGeneration{};
+    std::uint64_t                   activationGeneration{};
     std::unique_ptr<BlockTessellator> blockTessellator;
     std::vector<CorrectionState>    correctionStates;
     // One byte per structure block. This is updated by the existing bounded
