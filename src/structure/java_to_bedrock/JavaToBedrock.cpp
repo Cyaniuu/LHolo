@@ -219,6 +219,15 @@ Block const* waterSource() {
     return gWaterSource;
 }
 
+Block const* resolveExactBedrockBlock(std::string const& bedrockName) {
+    if (bedrockName.empty()) return nullptr;
+    auto const& block = BlockTypeRegistry::get().getDefaultBlockState(
+        HashedString(bedrockName), false
+    );
+    if (block.getTypeName() == bedrockName && !block.isAir()) return &block;
+    return nullptr;
+}
+
 } // namespace
 
 ResolvedJavaBlock resolveJavaBlockState(
@@ -227,13 +236,28 @@ ResolvedJavaBlock resolveJavaBlockState(
     int                                                     javaDataVersion
 ) {
     auto const* mapping = findMapping(javaName, properties, javaDataVersion);
-    if (!mapping) return {};
+    if (!mapping) {
+        std::lock_guard lock(gCacheMutex);
+        auto const* resolved = resolveExactBedrockBlock(javaName);
+        if (!resolved || resolved->isAir()) return {};
+
+        ResolvedJavaBlock result{.mapped = true};
+        if (resolved->getMaterial().isLiquid()) {
+            result.liquid = resolved;
+        } else {
+            result.block = resolved;
+        }
+        return result;
+    }
     if (mapping->bedrockName == "minecraft:air") return {.mapped = true};
 
     std::lock_guard lock(gCacheMutex);
     auto const* resolved = resolvePermutation(
         permutationsFor(mapping->bedrockName), mapping->bedrockStates
     );
+    if (!resolved || resolved->isAir()) {
+        resolved = resolveExactBedrockBlock(mapping->bedrockName);
+    }
     if (!resolved || resolved->isAir()) return {};
 
     ResolvedJavaBlock result{.mapped = true};
