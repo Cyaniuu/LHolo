@@ -20,6 +20,7 @@
 #include "projection/runtime/ProjectionProgress.h"
 #include "projection/runtime/ProjectionSession.h"
 #include "projection/runtime/ProjectionLifecycle.h"
+#include "projection/runtime/ProjectionWorldEvents.h"
 #include "projection/core/ProjectionState.h"
 #include "projection/world/ProjectionQueries.h"
 
@@ -107,6 +108,10 @@ void requestNextStructureAnchor(int x, int y, int z) {
 
 void cancelNextStructureAnchorRequest() {
     detail::ProjectionSession::getInstance().cancelAnchorRequest();
+}
+
+bool consumeWorldExitRequest() {
+    return detail::consumeWorldExitRequest();
 }
 
 BuildProgress getBuildProgress() {

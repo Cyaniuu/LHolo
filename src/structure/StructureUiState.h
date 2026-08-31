@@ -155,6 +155,10 @@ public:
     void clearMaterialHud();
     void clearMaterials();
 
+    // Clears transient UI and queued actions owned by the current world. User
+    // preferences (HUD layout, hotkey bindings, consent) remain unchanged.
+    void resetWorldSession();
+
 private:
     StructureUiState();
 

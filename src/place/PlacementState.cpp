@@ -71,7 +71,7 @@ void PlacementState::setNextSwapAt(std::uint64_t time) {
 }
 
 bool PlacementState::recentPlacementActive(std::int64_t cell, std::uint64_t now) const {
-    std::lock_guard lock(mRecentMutex);
+    std::lock_guard lock(mSessionCacheMutex);
     auto const found = mRecentPlacements.find(cell);
     return found != mRecentPlacements.end() && now < found->second;
 }
@@ -81,7 +81,7 @@ void PlacementState::recordRecentPlacement(
     std::uint64_t now,
     std::uint64_t expiresAt
 ) {
-    std::lock_guard lock(mRecentMutex);
+    std::lock_guard lock(mSessionCacheMutex);
     if (mRecentPlacements.size() > 256) {
         for (auto it = mRecentPlacements.begin(); it != mRecentPlacements.end();) {
             it = now >= it->second ? mRecentPlacements.erase(it) : std::next(it);
@@ -97,7 +97,7 @@ bool PlacementState::autoPlacementSuppressionsActive(std::uint64_t now) {
     // scanning the sparse map every tick while every entry is still active.
     if (now < nextExpiry) return true;
 
-    std::lock_guard lock(mRecentMutex);
+    std::lock_guard lock(mSessionCacheMutex);
     std::uint64_t earliest{};
     for (auto it = mAutoPlacementSuppressions.begin(); it != mAutoPlacementSuppressions.end();) {
         if (now >= it->second) {
@@ -112,13 +112,13 @@ bool PlacementState::autoPlacementSuppressionsActive(std::uint64_t now) {
 }
 
 bool PlacementState::autoPlacementSuppressed(std::int64_t cell, std::uint64_t now) const {
-    std::lock_guard lock(mRecentMutex);
+    std::lock_guard lock(mSessionCacheMutex);
     auto const found = mAutoPlacementSuppressions.find(cell);
     return found != mAutoPlacementSuppressions.end() && now < found->second;
 }
 
 void PlacementState::suppressAutoPlacement(std::int64_t cell, std::uint64_t expiresAt) {
-    std::lock_guard lock(mRecentMutex);
+    std::lock_guard lock(mSessionCacheMutex);
     mAutoPlacementSuppressions[cell] = expiresAt;
     auto const nextExpiry = mNextAutoPlacementSuppressionExpiry.load(std::memory_order_relaxed);
     if (nextExpiry == 0 || expiresAt < nextExpiry) {
@@ -127,6 +127,7 @@ void PlacementState::suppressAutoPlacement(std::int64_t cell, std::uint64_t expi
 }
 
 bool PlacementState::failedPlanCached(FailedPlanKey const& key, std::uint64_t now) const {
+    std::lock_guard lock(mSessionCacheMutex);
     auto const found = mFailedRangePlans.find(key);
     return found != mFailedRangePlans.end() && now < found->second;
 }
@@ -136,6 +137,7 @@ void PlacementState::cacheFailedPlan(
     std::uint64_t        now,
     std::uint64_t        expiresAt
 ) {
+    std::lock_guard lock(mSessionCacheMutex);
     if (mFailedRangePlans.size() > 256) {
         for (auto it = mFailedRangePlans.begin(); it != mFailedRangePlans.end();) {
             it = now >= it->second ? mFailedRangePlans.erase(it) : std::next(it);
@@ -152,6 +154,26 @@ std::string PlacementState::aimedProjectedBlockName() const {
 void PlacementState::setAimedProjectedBlockName(std::string name) {
     std::lock_guard lock(mAimedProjectedBlockNameMutex);
     mAimedProjectedBlockName = std::move(name);
+}
+
+void PlacementState::resetWorldSession() {
+    mEnabled.store(false, std::memory_order_release);
+    mRangeEnabled.store(false, std::memory_order_release);
+    mManualMode.store(false, std::memory_order_release);
+    mManualHeld.store(false, std::memory_order_release);
+    mManualPlaceRequested.store(false, std::memory_order_release);
+    mManualPressAt.store(0, std::memory_order_release);
+    mLastManualPlaceAt.store(0, std::memory_order_release);
+    mNextPlaceAt.store(0, std::memory_order_release);
+    mNextSwapAt.store(0, std::memory_order_release);
+    mNextAutoPlacementSuppressionExpiry.store(0, std::memory_order_release);
+    {
+        std::lock_guard lock(mSessionCacheMutex);
+        mRecentPlacements.clear();
+        mAutoPlacementSuppressions.clear();
+        mFailedRangePlans.clear();
+    }
+    setAimedProjectedBlockName({});
 }
 
 } // namespace lholo::place::detail

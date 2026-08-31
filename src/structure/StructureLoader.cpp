@@ -81,6 +81,7 @@ std::filesystem::path settingsPath() {
     return LHolo::getInstance().getSelf().getConfigDir() / "config.json";
 }
 
+void resetWorldSession();
 
 unsigned int currentHotkeyModifiers() {
     return uiState().currentHotkeyModifiers();
@@ -236,7 +237,14 @@ void resetHotkeyState() {
     uiState().resetHotkeyState();
 }
 
-void processPendingHotkeyActions() {
+void processPendingActions() {
+    if (projection::consumeWorldExitRequest()) {
+        place::resetWorldSession();
+        capture::clear();
+        resetWorldSession();
+        return;
+    }
+
     auto& session = detail::StructureSession::getInstance();
     auto const pending = uiState().consumePendingHotkeyActions();
     auto const layerActionEnabled = pending.layerDelta != 0 && session.transform().layerDisplayMode != 0;
@@ -834,16 +842,29 @@ void restoreSavedProjection() {
     );
 }
 
-void clear() {
+namespace {
+
+void clearProjectionSession(std::string status) {
     // Withdraw the requested structure before waiting for the mesh worker.
     // Otherwise the render hook can observe the old loaded structure in the gap after
     // projection::disable() and immediately enable the projection again.
-    detail::StructureSession::getInstance().clearLoaded("已关闭投影");
+    detail::StructureSession::getInstance().clearLoaded(std::move(status));
 
     // The active projection and in-flight worker keep non-owning Block pointers
     // into the Java mapper registry. Stop them before releasing that registry.
     projection::disable();
     resetJavaBlockMappingCache();
+}
+
+void resetWorldSession() {
+    clearProjectionSession("已退出世界");
+    uiState().resetWorldSession();
+}
+
+} // namespace
+
+void clear() {
+    clearProjectionSession("已关闭投影");
     uiState().clearMaterials();
 }
 

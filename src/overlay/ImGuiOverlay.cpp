@@ -586,7 +586,7 @@ void render(IDXGISwapChain* swapChain) {
     // D3D12 startup may not have exposed its command queue yet, so a failed
     // attempt is intentionally retried on the next Present.
     if (!initializeImGui(swapChain)) return;
-    structure::processPendingHotkeyActions();
+    structure::processPendingActions();
     auto const showGui = structure::isGuiVisible();
     auto const showHud = !showGui && structure::hasHudInfo();
     if (gGuiVisibleLastFrame != showGui) {

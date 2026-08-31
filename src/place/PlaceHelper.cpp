@@ -254,6 +254,10 @@ std::string getAimedProjectedBlockName() {
     return placementState().aimedProjectedBlockName();
 }
 
+void resetWorldSession() {
+    placementState().resetWorldSession();
+}
+
 bool installHook() {
     if (LocalPlayerEasyPlaceHook::hook() < 0) {
         logger().error("Failed to install easy-place tick hook");

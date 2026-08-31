@@ -94,6 +94,8 @@ public:
     [[nodiscard]] std::string aimedProjectedBlockName() const;
     void setAimedProjectedBlockName(std::string name);
 
+    void resetWorldSession();
+
 private:
     PlacementState() = default;
 
@@ -109,7 +111,7 @@ private:
     std::atomic_uint64_t mNextPlaceAt{0};
     std::atomic_uint64_t mNextSwapAt{0};
 
-    mutable std::mutex                               mRecentMutex;
+    mutable std::mutex                               mSessionCacheMutex;
     std::unordered_map<std::int64_t, std::uint64_t> mRecentPlacements;
     std::unordered_map<std::int64_t, std::uint64_t> mAutoPlacementSuppressions;
     std::atomic_uint64_t                             mNextAutoPlacementSuppressionExpiry{0};

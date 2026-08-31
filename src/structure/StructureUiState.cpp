@@ -426,4 +426,21 @@ void StructureUiState::clearMaterials() {
     mMaterialHudReady = false;
 }
 
+void StructureUiState::resetWorldSession() {
+    mGuiVisible.store(false, std::memory_order_release);
+    mOpeningInputBlockFrames.store(0, std::memory_order_release);
+    mBlockGameInputUntil.store(0, std::memory_order_release);
+    mPendingOffsetX.store(0, std::memory_order_release);
+    mPendingOffsetY.store(0, std::memory_order_release);
+    mPendingOffsetZ.store(0, std::memory_order_release);
+    mPendingLayerDelta.store(0, std::memory_order_release);
+    mPendingLoadProjection.store(false, std::memory_order_release);
+    mPendingCloseProjection.store(false, std::memory_order_release);
+    mIgnoreHotkeyUntil.store(0, std::memory_order_release);
+    stopHotkeyCapture();
+    resetHotkeyState();
+    setActionHint({}, 0);
+    clearMaterials();
+}
+
 } // namespace lholo::structure::detail

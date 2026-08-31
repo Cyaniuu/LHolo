@@ -352,18 +352,28 @@ void testPlacementState() {
     state.setAimedProjectedBlockName("Test projected block");
     LHOLO_CHECK(state.aimedProjectedBlockName() == "Test projected block");
 
-    state.setEnabled(false);
-    state.setRangeEnabled(false);
-    state.setManualMode(false);
+    state.suppressAutoPlacement(suppressedCell, 500);
+    state.resetWorldSession();
+    LHOLO_CHECK(!state.enabled());
+    LHOLO_CHECK(!state.rangeEnabled());
+    LHOLO_CHECK(!state.manualMode());
+    LHOLO_CHECK(!state.manualHeld());
+    LHOLO_CHECK(!state.manualPlaceRequested());
+    LHOLO_CHECK(state.manualPressAt() == 0);
+    LHOLO_CHECK(state.lastManualPlaceAt() == 0);
+    LHOLO_CHECK(state.nextPlaceAt() == 0);
+    LHOLO_CHECK(state.nextSwapAt() == 0);
+    LHOLO_CHECK(!state.recentPlacementActive(recentCell, 0));
+    LHOLO_CHECK(!state.autoPlacementSuppressionsActive(0));
+    LHOLO_CHECK(!state.autoPlacementSuppressed(suppressedCell, 0));
+    LHOLO_CHECK(!state.failedPlanCached(failedKey, 0));
+    LHOLO_CHECK(state.aimedProjectedBlockName().empty());
+    // User configuration survives a world transition.
+    LHOLO_CHECK(state.radius() == 3);
+    LHOLO_CHECK(state.autoPlacementBreakCooldownSeconds() == 12);
+
     state.setRadius(4);
     state.setAutoPlacementBreakCooldownSeconds(10);
-    state.setManualPressAt(0);
-    state.setLastManualPlaceAt(0);
-    state.setManualPlaceRequested(false);
-    state.setManualHeld(false);
-    state.setNextPlaceAt(0);
-    state.setNextSwapAt(0);
-    state.setAimedProjectedBlockName({});
 }
 
 void testStructureUiState() {
@@ -496,6 +506,45 @@ void testStructureUiState() {
     LHOLO_CHECK(state.openingInputBlocked());
     state.consumeOpeningInputBlockFrame();
     LHOLO_CHECK(!state.openingInputBlocked());
+
+    state.setGuiVisible(true);
+    state.setOpeningInputBlockFrames(3);
+    state.setBlockGameInputUntil(900);
+    state.beginHotkeyCapture(moveXMinusSlot);
+    state.setControlHeld(true);
+    state.queueMove(1);
+    state.queueLayerDelta(1);
+    state.queueLoadProjection();
+    state.queueCloseProjection();
+    state.requestSettingsSave();
+    state.replaceMaterialRequirements({{"Stone", "minecraft:stone", "minecraft:stone", 4}});
+    state.replaceMaterialHudSnapshot(
+        {{"Glass", "minecraft:glass", "minecraft:glass", 2}},
+        {1}
+    );
+    state.setActionHint("world hint", 9999);
+    state.resetWorldSession();
+    LHOLO_CHECK(!state.guiVisible());
+    LHOLO_CHECK(!state.openingInputBlocked());
+    LHOLO_CHECK(state.blockGameInputUntil() == 0);
+    LHOLO_CHECK(!state.capturingHotkey());
+    LHOLO_CHECK(state.currentHotkeyModifiers() == 0);
+    LHOLO_CHECK(!state.materialListReady());
+    LHOLO_CHECK(!state.materialHudSnapshot().ready);
+    LHOLO_CHECK(state.actionHint().text.empty());
+    LHOLO_CHECK(state.actionHint().expiry == 0);
+    auto const afterWorldExit = state.consumePendingHotkeyActions();
+    LHOLO_CHECK(afterWorldExit.offsetX == 0);
+    LHOLO_CHECK(afterWorldExit.offsetY == 0);
+    LHOLO_CHECK(afterWorldExit.offsetZ == 0);
+    LHOLO_CHECK(afterWorldExit.layerDelta == 0);
+    LHOLO_CHECK(!afterWorldExit.loadProjection);
+    LHOLO_CHECK(!afterWorldExit.closeProjection);
+    // A pending settings write is not world-owned and must still complete.
+    LHOLO_CHECK(afterWorldExit.settingsSave);
+    LHOLO_CHECK(state.experimentalConsentGiven());
+    LHOLO_CHECK(state.materialHudEnabled());
+    LHOLO_CHECK(state.materialHudPosition() == 3);
 
     state.setGuiVisible(false);
     state.resetHotkeys();

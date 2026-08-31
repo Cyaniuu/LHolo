@@ -62,12 +62,11 @@ bool AppKernel::disable() {
 
     structure::saveSettings();
     structure::detail::shutdownMaterialTracker();
-    projection::detail::projectionController().disableProjection();
+    structure::clear();
     input::uninstallMenuInputGuard();
     place::uninstallHook();
     overlay::shutdown();
     structure::capture::clear();
-    structure::clear();
     projection::detail::projectionController().uninstallHooks();
 
     logger.info("LHolo disabled");

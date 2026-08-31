@@ -27,6 +27,7 @@ struct PendingBlockChange {
 
 void attachProjectionWorldEvents(Level& level, BlockSource& blockSource);
 void detachProjectionWorldEvents();
+bool consumeWorldExitRequest();
 
 std::vector<PendingBlockChange> takePendingBlockChanges(std::size_t limit);
 std::vector<SubChunkKey> takePendingLoadedSubChunks(std::size_t limit);

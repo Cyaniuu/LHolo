@@ -72,7 +72,8 @@ bool isMenuInputCaptured();
 bool handleGuiHotkeyKeyDown(unsigned int virtualKey);
 bool handleGuiHotkeyKeyUp(unsigned int virtualKey);
 void resetHotkeyState();
-void processPendingHotkeyActions();
+// Present-frame control plane for deferred world-lifecycle and hotkey actions.
+void processPendingActions();
 bool hasHudInfo();
 void renderHud();
 // Current-visible-range material HUD: missing projected cells vs. inventory.

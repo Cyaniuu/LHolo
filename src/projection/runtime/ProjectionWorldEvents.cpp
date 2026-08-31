@@ -33,6 +33,7 @@ std::deque<SubChunkKey>   gIncomingLoadedSubChunks;
 std::atomic<BlockSource*> gAttachedBlockSource{};
 std::atomic<ChunkSource*> gAttachedChunkSource{};
 std::atomic<Level*>       gAttachedLevel{};
+std::atomic_bool          gWorldExitPending{};
 
 class ProjectionBlockSourceListener final : public BlockSourceListener {
 public:
@@ -92,7 +93,13 @@ public:
 
     void onLevelDestruction(std::string const&) override {
         gAttachedLevel.store(nullptr, std::memory_order_release);
+        // The level owns this block source and is already tearing it down. Do
+        // not retain or later call removeListener through a dying object.
+        gAttachedBlockSource.store(nullptr, std::memory_order_release);
         gAttachedChunkSource.store(nullptr, std::memory_order_release);
+        // Only publish a fact here. Projection shutdown waits for workers and
+        // belongs on the next normal overlay frame, outside engine teardown.
+        gWorldExitPending.store(true, std::memory_order_release);
     }
 };
 
@@ -130,6 +137,11 @@ void detachProjectionWorldEvents() {
     std::lock_guard lock(gPendingEventsMutex);
     gIncomingBlockChanges.clear();
     gIncomingLoadedSubChunks.clear();
+}
+
+bool consumeWorldExitRequest() {
+    if (!gWorldExitPending.load(std::memory_order_acquire)) return false;
+    return gWorldExitPending.exchange(false, std::memory_order_acq_rel);
 }
 
 std::vector<PendingBlockChange> takePendingBlockChanges(std::size_t limit) {
