@@ -175,7 +175,7 @@ void testSettingsStore() {
         std::ifstream saved(path);
         std::ostringstream contents;
         contents << saved.rdbuf();
-        LHOLO_CHECK(contents.str().find("\"version\": 11") != std::string::npos);
+        LHOLO_CHECK(contents.str().find("\"version\": 10") != std::string::npos);
         LHOLO_CHECK(contents.str().find("toggleManualHotkey") == std::string::npos);
         LHOLO_CHECK(contents.str().find("toggleEasyHotkey") == std::string::npos);
         LHOLO_CHECK(contents.str().find("toggleRangeHotkey") == std::string::npos);

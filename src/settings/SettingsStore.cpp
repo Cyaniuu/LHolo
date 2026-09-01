@@ -104,7 +104,7 @@ void saveSettingsFile(std::filesystem::path const& path, Settings const& setting
     if (error) throw std::runtime_error(error.message());
 
     nlohmann::ordered_json const json{
-        {"version", 11},
+        {"version", 10},
         {"lastStructurePath", settings.lastStructurePath},
         {"uiScale", settings.uiScale},
         {"opacity", settings.opacity},

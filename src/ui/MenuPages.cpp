@@ -482,18 +482,20 @@ void renderRenderPage(MenuModel& model, MenuActions const& actions, UiMetrics co
                 model.correctionOutlineOpacity = static_cast<float>(std::clamp(outline, 0, 100)) / 100.0f;
             }
         });
-        renderCheckboxRow(
-            "##CorrectionSeeThrough", "错误标记穿透显示（X 光）", model.correctionSeeThrough, metrics
-        );
-        ImGui::TextDisabled("放置错误与状态错误共用此开关");
-        renderCheckboxRow(
-            "##MissingSeeThrough", "未放置标记穿透显示（X 光）", model.missingSeeThrough, metrics
-        );
         if (ImGui::Button("恢复默认纠错样式")) {
             if (actions.resetCorrectionStyle) actions.resetCorrectionStyle();
             model.correctionFillOpacity = 0.15f;
             model.correctionOutlineOpacity = 1.0f;
         }
+    });
+
+    renderSection("##SeeThrough", "穿透显示", metrics, [&] {
+        renderCheckboxRow(
+            "##CorrectionSeeThrough", "错误标记穿透显示（X 光）", model.correctionSeeThrough, metrics
+        );
+        renderCheckboxRow(
+            "##MissingSeeThrough", "未放置标记穿透显示（X 光）", model.missingSeeThrough, metrics
+        );
     });
 }
 
