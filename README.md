@@ -1,12 +1,14 @@
 # LHolo
 
-LHolo是一个 [LeviLamina](https://github.com/LiteLDev/LeviLamina) 客户端模组
+LHolo是一个 [LeviLamina](https://github.com/LiteLDev/LeviLamina) 客户端投影模组
 
 [安装教程](https://www.bilibili.com/opus/1239631121935761412)
 
 ## 简介
 
 聊天栏输入  `LHolo`  打开投影菜单,或者使用快捷键  `Alt + M`
+
+使用本模组时,建议关闭灵动视效
 
 本模组交互主要依赖于GUI与快捷键
 
