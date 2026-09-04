@@ -40,6 +40,13 @@ bool expectBlockPos(BlockPos const& pos, int x, int y, int z) {
 }
 
 void testLayoutRules() {
+    LHOLO_CHECK(isVanillaSaplingType("minecraft:oak_sapling"));
+    LHOLO_CHECK(isVanillaSaplingType("minecraft:dark_oak_sapling"));
+    LHOLO_CHECK(isVanillaSaplingType("minecraft:bamboo_sapling"));
+    LHOLO_CHECK(!isVanillaSaplingType("minecraft:oak_log"));
+    LHOLO_CHECK(!isVanillaSaplingType("minecraft:flower_pot"));
+    LHOLO_CHECK(!isVanillaSaplingType("example:oak_sapling"));
+
     LHOLO_CHECK(getProjectionMirror(0) == Mirror::None);
     LHOLO_CHECK(getProjectionMirror(1) == Mirror::Z);
     LHOLO_CHECK(getProjectionMirror(2) == Mirror::X);

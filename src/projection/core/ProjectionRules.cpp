@@ -22,6 +22,40 @@
 #include "mc/world/level/levelgen/structure/LegacyStructureSettings.h"
 
 namespace lholo::projection::detail {
+namespace {
+
+CompoundTag const* serializedBlockStates(Block const& block) {
+    for (auto const& [key, value] : block.getSerializationId()) {
+        if (key == "states" && value.hold<CompoundTag>()) return &value.get<CompoundTag>();
+    }
+    return nullptr;
+}
+
+bool serializedStatesMatchExcept(
+    Block const& expected,
+    Block const& actual,
+    std::string_view ignoredState
+) {
+    auto const* expectedStates = serializedBlockStates(expected);
+    auto const* actualStates = serializedBlockStates(actual);
+    if (!expectedStates || !actualStates) return expectedStates == actualStates;
+
+    std::size_t comparedExpected{};
+    std::size_t comparedActual{};
+    for (auto const& [key, value] : *expectedStates) {
+        if (key == ignoredState) continue;
+        ++comparedExpected;
+        auto const found = actualStates->mTags.find(key);
+        if (found == actualStates->mTags.end() || !(value == found->second)) return false;
+    }
+    for (auto const& [key, value] : *actualStates) {
+        (void)value;
+        if (key != ignoredState) ++comparedActual;
+    }
+    return comparedExpected == comparedActual;
+}
+
+} // namespace
 
 Block const* transformExpectedBlock(
     Block const*                   block,
@@ -42,6 +76,12 @@ Block const* transformExpectedBlock(
 bool projectionStatesMatch(Block const& expected, Block const& actual) {
     if (expected == actual) return true;
     if (expected.getTypeName() != actual.getTypeName()) return false;
+    // Litematic's Java `stage` maps to Bedrock's dynamic `age_bit`, which is
+    // reset when a player places a sapling. Ignore only that growth bit; any
+    // other present or future sapling state remains part of correction.
+    if (isVanillaSaplingType(expected.getTypeName())) {
+        return serializedStatesMatchExcept(expected, actual, "age_bit");
+    }
 
     auto stateMatches = [&](auto const& state) {
         using StateValue = typename std::remove_cvref_t<decltype(state)>::Type;

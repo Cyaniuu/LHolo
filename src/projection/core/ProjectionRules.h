@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <string_view>
+
 #include "projection/core/ProjectionInternalTypes.h"
 #include "structure/StructureLoader.h"
 
@@ -30,6 +32,11 @@ Block const* transformExpectedBlock(
 );
 
 bool projectionStatesMatch(Block const& expected, Block const& actual);
+
+[[nodiscard]] constexpr bool isVanillaSaplingType(std::string_view blockTypeName) {
+    return blockTypeName.starts_with("minecraft:") && blockTypeName.ends_with("_sapling");
+}
+
 int  blockFrontFace(Block const& block);
 
 BlockPos transformStructurePosition(
