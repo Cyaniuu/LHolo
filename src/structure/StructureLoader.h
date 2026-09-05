@@ -73,6 +73,7 @@ bool isInputTransitionBlocked();
 bool isMenuInputCaptured();
 bool handleGuiHotkeyKeyDown(unsigned int virtualKey);
 bool handleGuiHotkeyKeyUp(unsigned int virtualKey);
+bool handleProjectionOffsetWheel(short wheelDelta);
 void resetHotkeyState();
 // Present-frame control plane for deferred world-lifecycle and hotkey actions.
 void processPendingActions();

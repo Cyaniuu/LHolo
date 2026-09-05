@@ -69,6 +69,7 @@ constexpr std::size_t kLayerIncreaseHotkeyIndex = input::hotkeyIndex(input::Hotk
 constexpr std::size_t kLayerDecreaseHotkeyIndex = input::hotkeyIndex(input::HotkeyId::LayerDecrease);
 constexpr std::size_t kLoadProjectionHotkeyIndex = input::hotkeyIndex(input::HotkeyId::LoadProjection);
 constexpr std::size_t kCloseProjectionHotkeyIndex = input::hotkeyIndex(input::HotkeyId::CloseProjection);
+constexpr std::size_t kProjectionOffsetHotkeyIndex = input::hotkeyIndex(input::HotkeyId::ProjectionOffset);
 constexpr float kActionHintVerticalScreenRatio = 0.80f;
 auto& logger() {
     return LHolo::getInstance().getSelf().getLogger();
@@ -91,6 +92,19 @@ void resetWorldSession();
 
 unsigned int currentHotkeyModifiers() {
     return uiState().currentHotkeyModifiers();
+}
+
+bool projectionOffsetHotkeyMatches(unsigned int virtualKey) {
+    auto const hotkey = uiState().inputHotkey(kProjectionOffsetHotkeyIndex);
+    auto modifiers = currentHotkeyModifiers();
+    if (virtualKey == VK_CONTROL || virtualKey == VK_LCONTROL || virtualKey == VK_RCONTROL) {
+        modifiers &= ~ui::kHotkeyModifierControl;
+    } else if (virtualKey == VK_MENU || virtualKey == VK_LMENU || virtualKey == VK_RMENU) {
+        modifiers &= ~ui::kHotkeyModifierAlt;
+    } else if (virtualKey == VK_SHIFT || virtualKey == VK_LSHIFT || virtualKey == VK_RSHIFT) {
+        modifiers &= ~ui::kHotkeyModifierShift;
+    }
+    return hotkey.key != 0 && hotkey.key == virtualKey && hotkey.modifiers == modifiers;
 }
 
 } // namespace
@@ -152,6 +166,13 @@ bool handleGuiHotkeyKeyDown(unsigned int virtualKey) {
             uiState().bindCapturedHotkey(*captureIndex, virtualKey, modifiers);
             uiState().setIgnoreHotkeyUntil(GetTickCount64() + 250);
             uiState().requestSettingsSave();
+        }
+        return true;
+    }
+
+    if (projectionOffsetHotkeyMatches(virtualKey)) {
+        if (GetTickCount64() >= uiState().ignoreHotkeyUntil()) {
+            (void)uiState().tryPressHotkey(kProjectionOffsetHotkeyIndex);
         }
         return true;
     }
@@ -225,18 +246,39 @@ bool handleGuiHotkeyKeyDown(unsigned int virtualKey) {
 bool handleGuiHotkeyKeyUp(unsigned int virtualKey) {
     if (virtualKey == VK_CONTROL || virtualKey == VK_LCONTROL || virtualKey == VK_RCONTROL) {
         uiState().setControlHeld(false);
-        return false;
+        return uiState().releaseHotkeysForKey(virtualKey, GetTickCount64());
     }
     if (virtualKey == VK_MENU || virtualKey == VK_LMENU || virtualKey == VK_RMENU) {
         uiState().setAltHeld(false);
-        return false;
+        return uiState().releaseHotkeysForKey(virtualKey, GetTickCount64());
     }
     if (virtualKey == VK_SHIFT || virtualKey == VK_LSHIFT || virtualKey == VK_RSHIFT) {
         uiState().setShiftHeld(false);
-        return false;
+        return uiState().releaseHotkeysForKey(virtualKey, GetTickCount64());
     }
 
     return uiState().releaseHotkeysForKey(virtualKey, GetTickCount64());
+}
+
+bool handleProjectionOffsetWheel(short wheelDelta) {
+    if (isGuiVisible() || !uiState().hotkeyHeld(kProjectionOffsetHotkeyIndex)
+        || !detail::StructureSession::getInstance().hasLoaded()) {
+        return false;
+    }
+
+    auto client = ll::service::getClientInstance();
+    auto* player = client ? client->getLocalPlayer() : nullptr;
+    if (!player) return false;
+
+    auto const steps = static_cast<int>(wheelDelta) / WHEEL_DELTA;
+    if (steps == 0) return false;
+    auto const view = player->getViewVector(1.0f);
+    auto const deltaX = static_cast<int>(std::round(view.x));
+    auto const deltaY = static_cast<int>(std::round(view.y));
+    auto const deltaZ = static_cast<int>(std::round(view.z));
+    if (deltaX == 0 && deltaY == 0 && deltaZ == 0) return false;
+    uiState().queueOffsetDelta(deltaX * steps, deltaY * steps, deltaZ * steps);
+    return true;
 }
 
 void resetHotkeyState() {
@@ -706,6 +748,11 @@ void loadSettings() {
             std::clamp(settings.closeProjectionHotkey, 0, 255),
             std::clamp(settings.closeProjectionHotkeyModifiers, 0, 7)
         );
+        uiState().setHotkey(
+            kProjectionOffsetHotkeyIndex,
+            std::clamp(settings.projectionOffsetHotkey, 0, 255),
+            std::clamp(settings.projectionOffsetHotkeyModifiers, 0, 7)
+        );
         session.setSavedProjection({
             settings.hasSavedProjection,
             settings.savedAnchorX,
@@ -785,6 +832,9 @@ void saveSettings() {
         settings.loadProjectionHotkeyModifiers = loadProjectionHotkey.modifiers;
         settings.closeProjectionHotkey = closeProjectionHotkey.key;
         settings.closeProjectionHotkeyModifiers = closeProjectionHotkey.modifiers;
+        auto const projectionOffsetHotkey = uiState().hotkey(kProjectionOffsetHotkeyIndex);
+        settings.projectionOffsetHotkey = projectionOffsetHotkey.key;
+        settings.projectionOffsetHotkeyModifiers = projectionOffsetHotkey.modifiers;
         settings.hasSavedProjection = sessionSnapshot.saved.available;
         settings.savedAnchorX = sessionSnapshot.saved.anchorX;
         settings.savedAnchorY = sessionSnapshot.saved.anchorY;

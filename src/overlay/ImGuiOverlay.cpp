@@ -435,6 +435,9 @@ LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     // own window messages, so translate them to virtual-key codes and route them
     // through the same capture/trigger path as the keyboard.
     if (!gShuttingDown.load(std::memory_order_acquire) && gImGuiInitialized) {
+            GET_WHEEL_DELTA_WPARAM(wParam))) {
+            return 1;
+        }
         unsigned int mouseKey = 0;
         switch (message) {
         case WM_MBUTTONDOWN:

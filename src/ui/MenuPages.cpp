@@ -538,6 +538,8 @@ void renderHotkeysPage(MenuModel& model, MenuActions const& actions, UiMetrics c
                 actions.beginHotkeyCapture(hotkey.id);
             }
             ImGui::SameLine();
+            if (ImGui::Button("恢复默认") && actions.resetHotkey) actions.resetHotkey(hotkey.id);
+            ImGui::SameLine();
             if (ImGui::Button("清除") && actions.clearHotkey) actions.clearHotkey(hotkey.id);
             ImGui::PopID();
         }

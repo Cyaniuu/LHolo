@@ -52,6 +52,7 @@ MenuPage               gActivePage{MenuPage::Projection};
 struct HotkeyDefinition { HotkeyId id; char const* label; };
 constexpr std::array<HotkeyDefinition, input::kHotkeyCount> kHotkeyDefinitions{{
     {HotkeyId::Gui, "打开投影菜单"},
+    {HotkeyId::ProjectionOffset, "结构偏移"},
     {HotkeyId::MoveXMinus, "结构偏移 X -1"},
     {HotkeyId::MoveXPlus, "结构偏移 X +1"},
     {HotkeyId::MoveZMinus, "结构偏移 Z -1"},
@@ -307,6 +308,10 @@ MenuActions buildStructureMenuActions(bool& refreshModel) {
     };
     actions.clearHotkey = [](HotkeyId id) {
         uiState().clearHotkey(static_cast<std::size_t>(id));
+        structure::saveSettings();
+    };
+    actions.resetHotkey = [](HotkeyId id) {
+        uiState().resetHotkey(static_cast<std::size_t>(id));
         structure::saveSettings();
     };
     actions.resetHotkeys = [] {

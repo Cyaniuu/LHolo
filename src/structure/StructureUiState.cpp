@@ -27,6 +27,7 @@ struct DefaultHotkey {
 
 constexpr std::array<DefaultHotkey, input::kHotkeyCount> kDefaultHotkeys{{
     {'M',     lholo::ui::kHotkeyModifierAlt},
+    {VK_LMENU, 0},
     {VK_LEFT, lholo::ui::kHotkeyModifierControl},
     {VK_RIGHT,lholo::ui::kHotkeyModifierControl},
     {VK_UP,   lholo::ui::kHotkeyModifierControl},
@@ -223,6 +224,15 @@ void StructureUiState::resetHotkeys() {
     stopHotkeyCapture();
 }
 
+void StructureUiState::resetHotkey(std::size_t index) {
+    auto* storage = hotkeyStorage(index);
+    if (!storage) return;
+    storage->key.store(kDefaultHotkeys[index].key, std::memory_order_release);
+    storage->modifiers.store(kDefaultHotkeys[index].modifiers, std::memory_order_release);
+    storage->capturing.store(false, std::memory_order_release);
+    storage->held.store(false, std::memory_order_release);
+}
+
 void StructureUiState::setControlHeld(bool held) {
     mControlHeld.store(held, std::memory_order_release);
 }
@@ -240,6 +250,11 @@ unsigned int StructureUiState::currentHotkeyModifiers() const {
 bool StructureUiState::tryPressHotkey(std::size_t index) {
     auto* storage = hotkeyStorage(index);
     return storage && !storage->held.exchange(true, std::memory_order_acq_rel);
+}
+
+bool StructureUiState::hotkeyHeld(std::size_t index) const {
+    auto const* storage = hotkeyStorage(index);
+    return storage && storage->held.load(std::memory_order_acquire);
 }
 
 bool StructureUiState::releaseHotkeysForKey(unsigned int key, std::uint64_t now) {
@@ -286,6 +301,12 @@ void StructureUiState::queueMove(std::size_t index) {
     case 5: mPendingOffsetY.fetch_sub(1, std::memory_order_relaxed); break;
     default: break;
     }
+}
+
+void StructureUiState::queueOffsetDelta(int deltaX, int deltaY, int deltaZ) {
+    mPendingOffsetX.fetch_add(deltaX, std::memory_order_relaxed);
+    mPendingOffsetY.fetch_add(deltaY, std::memory_order_relaxed);
+    mPendingOffsetZ.fetch_add(deltaZ, std::memory_order_relaxed);
 }
 
 void StructureUiState::queueLayerDelta(int delta) {
