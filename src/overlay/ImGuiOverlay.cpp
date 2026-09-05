@@ -435,6 +435,7 @@ LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     // own window messages, so translate them to virtual-key codes and route them
     // through the same capture/trigger path as the keyboard.
     if (!gShuttingDown.load(std::memory_order_acquire) && gImGuiInitialized) {
+        if (message == WM_MOUSEWHEEL && structure::handleProjectionOffsetWheel(
             GET_WHEEL_DELTA_WPARAM(wParam))) {
             return 1;
         }
