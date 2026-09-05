@@ -104,7 +104,12 @@ bool projectionOffsetHotkeyMatches(unsigned int virtualKey) {
     } else if (virtualKey == VK_SHIFT || virtualKey == VK_LSHIFT || virtualKey == VK_RSHIFT) {
         modifiers &= ~ui::kHotkeyModifierShift;
     }
-    return hotkey.key != 0 && hotkey.key == virtualKey && hotkey.modifiers == modifiers;
+    auto const altKey = [](unsigned int key) {
+        return key == VK_MENU || key == VK_LMENU || key == VK_RMENU;
+    };
+    auto const keysMatch = hotkey.key == virtualKey
+        || (altKey(hotkey.key) && altKey(virtualKey));
+    return hotkey.key != 0 && keysMatch && hotkey.modifiers == modifiers;
 }
 
 } // namespace

@@ -27,7 +27,7 @@ struct DefaultHotkey {
 
 constexpr std::array<DefaultHotkey, input::kHotkeyCount> kDefaultHotkeys{{
     {'M',     lholo::ui::kHotkeyModifierAlt},
-    {VK_LMENU, 0},
+    {VK_MENU,  0},
     {VK_LEFT, lholo::ui::kHotkeyModifierControl},
     {VK_RIGHT,lholo::ui::kHotkeyModifierControl},
     {VK_UP,   lholo::ui::kHotkeyModifierControl},
@@ -39,6 +39,13 @@ constexpr std::array<DefaultHotkey, input::kHotkeyCount> kDefaultHotkeys{{
     {0,       0},
     {0,       0},
 }};
+
+bool hotkeyKeysMatch(unsigned int bindingKey, unsigned int eventKey) {
+    auto const isAltKey = [](unsigned int key) {
+        return key == VK_MENU || key == VK_LMENU || key == VK_RMENU;
+    };
+    return bindingKey == eventKey || (isAltKey(bindingKey) && isAltKey(eventKey));
+}
 
 } // namespace
 
@@ -260,7 +267,7 @@ bool StructureUiState::hotkeyHeld(std::size_t index) const {
 bool StructureUiState::releaseHotkeysForKey(unsigned int key, std::uint64_t now) {
     bool consumed{};
     for (auto& hotkey : mHotkeys) {
-        if (key == hotkey.key.load(std::memory_order_acquire)) {
+        if (hotkeyKeysMatch(hotkey.key.load(std::memory_order_acquire), key)) {
             consumed = hotkey.held.exchange(false, std::memory_order_acq_rel) || consumed;
         }
     }
