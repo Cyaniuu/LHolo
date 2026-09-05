@@ -99,6 +99,7 @@ struct MenuModel {
     int displayLayer{};
     int maxLayerY{};
     int maxLayerX{};
+    int materialCount{};
 
     std::array<HotkeyRow, input::kHotkeyCount> hotkeys{};
     bool hudEnabled{true};

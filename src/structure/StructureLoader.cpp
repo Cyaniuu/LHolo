@@ -452,7 +452,10 @@ void renderHud() {
     if (!sessionSnapshot.loaded) return;
     auto const fileName = detail::pathToUtf8(sessionSnapshot.loaded->sourcePath.filename());
     auto const layerAxis = sessionSnapshot.transform.layerAxis;
-    auto const maxLayer = layerAxis == 1 ? sessionSnapshot.maxLayerX : sessionSnapshot.maxLayerY;
+    auto const layerMode = sessionSnapshot.transform.layerDisplayMode;
+    auto const maxLayer = layerAxis == 2
+        ? std::max(0, static_cast<int>(sessionSnapshot.loaded->materialCount) - 1)
+        : (layerAxis == 1 ? sessionSnapshot.maxLayerX : sessionSnapshot.maxLayerY);
 
     auto const displaySize = ImGui::GetIO().DisplaySize;
     auto uiScale = hud.uiScale;
@@ -465,7 +468,6 @@ void renderHud() {
     }
     auto const hudMetrics = lholo::ui::calculateMetrics(displaySize, uiScale);
     lholo::ui::applyFluentTheme(hudMetrics);
-    auto const layerMode = sessionSnapshot.transform.layerDisplayMode;
     auto const currentLayer = std::clamp(
         sessionSnapshot.transform.displayLayer,
         0,
@@ -497,7 +499,17 @@ void renderHud() {
         | ImGuiWindowFlags_NoInputs;
     if (ImGui::Begin("##LHoloHud", nullptr, flags)) {
         if (showFileName) ImGui::Text("投影：%s", fileName.c_str());
-        if (showLayer && layerMode == 0) {
+        if (showLayer && layerAxis == 2) {
+            if (layerMode == 0) {
+                ImGui::TextUnformatted("显示范围：完整材料清单");
+            } else if (layerMode == 1) {
+                ImGui::Text("当前材料：%d / %d", currentLayer, maxLayer);
+            } else if (layerMode == 2) {
+                ImGui::Text("显示材料：第 0～%d", currentLayer);
+            } else {
+                ImGui::Text("显示材料：第 %d～%d", currentLayer, maxLayer);
+            }
+        } else if (showLayer && layerMode == 0) {
             ImGui::TextUnformatted("显示范围：完整结构");
         } else if (showLayer && layerMode == 1) {
             ImGui::Text(
@@ -771,7 +783,7 @@ void loadSettings() {
                 settings.savedOffsetZ,
                 settings.savedLayerDisplayMode,
                 settings.savedDisplayLayer,
-                std::clamp(settings.savedLayerAxis, 0, 1)
+                std::clamp(settings.savedLayerAxis, 0, 2)
             },
             settings.savedStructurePath
         });
