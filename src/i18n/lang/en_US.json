@@ -88,7 +88,7 @@
   "checkbox.hudExtraBlocks": "Show extra blocks",
   "checkbox.materialHudEnabled": "Show missing materials",
   "checkbox.materialHudShulkerBoxConversion": "Convert to shulker boxes",
-  "hint.materialHudShulkerBoxConversion": "Note: One stack is 64 items. Calculate manually for items with a different max stack size.",
+  "hint.materialHudShulkerBoxConversion": "Automatically converts using the item's maximum stack size.",
   "label.materialHudPosition": "Missing materials position",
   "hud.shulkerBoxUnit": " boxes",
   "hud.stackUnit": " stacks",

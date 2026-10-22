@@ -88,7 +88,7 @@
   "checkbox.hudExtraBlocks": "顯示多餘方塊",
   "checkbox.materialHudEnabled": "顯示缺少材料",
   "checkbox.materialHudShulkerBoxConversion": "折算為界伏盒",
-  "hint.materialHudShulkerBoxConversion": "注意：一組為64，最大堆疊不為64的請自行計算",
+  "hint.materialHudShulkerBoxConversion": "依照該物品的最大堆疊數自動換算",
   "label.materialHudPosition": "缺少材料位置",
   "hud.shulkerBoxUnit": "盒",
   "hud.stackUnit": "組",

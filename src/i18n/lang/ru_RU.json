@@ -88,7 +88,7 @@
   "checkbox.hudExtraBlocks": "Показывать лишние блоки",
   "checkbox.materialHudEnabled": "Показывать недостающие материалы",
   "checkbox.materialHudShulkerBoxConversion": "Пересчитывать в шалкеровые ящики",
-  "hint.materialHudShulkerBoxConversion": "Примечание: один стак — 64 предмета. Для предметов с другим размером стака рассчитайте вручную.",
+  "hint.materialHudShulkerBoxConversion": "Автоматический пересчёт с учётом максимального размера стака предмета.",
   "label.materialHudPosition": "Положение списка недостающих материалов",
   "hud.shulkerBoxUnit": " шалкеров",
   "hud.stackUnit": " стаков",

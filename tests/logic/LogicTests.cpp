@@ -183,19 +183,21 @@ void testProgress() {
 
 void testShulkerBoxCountFormat() {
     using lholo::structure::formatShulkerBoxCount;
-    LHOLO_CHECK(formatShulkerBoxCount(0, "盒", "组") == "0");
-    LHOLO_CHECK(formatShulkerBoxCount(5, "盒", "组") == "5");
-    LHOLO_CHECK(formatShulkerBoxCount(128, "盒", "组") == "2组");
-    LHOLO_CHECK(formatShulkerBoxCount(27 * 64, "盒", "组") == "1盒");
-    LHOLO_CHECK(formatShulkerBoxCount(54 * 64, "盒", "组") == "2盒");
-    LHOLO_CHECK(formatShulkerBoxCount(28 * 64, "盒", "组") == "1盒 + 1组");
-    LHOLO_CHECK(formatShulkerBoxCount(27 * 64 + 5, "盒", "组") == "1盒 + 5");
-    LHOLO_CHECK(formatShulkerBoxCount(54 * 64 + 5, "盒", "组") == "2盒 + 5");
+    LHOLO_CHECK(formatShulkerBoxCount(0, 64, "盒", "组") == "0");
+    LHOLO_CHECK(formatShulkerBoxCount(5, 64, "盒", "组") == "5");
+    LHOLO_CHECK(formatShulkerBoxCount(128, 64, "盒", "组") == "2组");
+    LHOLO_CHECK(formatShulkerBoxCount(27 * 64, 64, "盒", "组") == "1盒");
+    LHOLO_CHECK(formatShulkerBoxCount(54 * 64, 64, "盒", "组") == "2盒");
+    LHOLO_CHECK(formatShulkerBoxCount(28 * 64, 64, "盒", "组") == "1盒 + 1组");
+    LHOLO_CHECK(formatShulkerBoxCount(27 * 64 + 5, 64, "盒", "组") == "1盒 + 5");
+    LHOLO_CHECK(formatShulkerBoxCount(54 * 64 + 5, 64, "盒", "组") == "2盒 + 5");
     LHOLO_CHECK(
-        formatShulkerBoxCount(28 * 64 + 5, "盒", "组") == "1盒 + 1组 + 5"
+        formatShulkerBoxCount(28 * 64 + 5, 64, "盒", "组") == "1盒 + 1组 + 5"
     );
-    LHOLO_CHECK(formatShulkerBoxCount(27 * 16, "盒", "组") == "6组 + 48");
-    LHOLO_CHECK(formatShulkerBoxCount(27, "盒", "组") == "27");
+    LHOLO_CHECK(formatShulkerBoxCount(27 * 16, 16, "盒", "组") == "1盒");
+    LHOLO_CHECK(formatShulkerBoxCount(16, 16, "盒", "组") == "1组");
+    LHOLO_CHECK(formatShulkerBoxCount(27 * 16 + 3, 16, "盒", "组") == "1盒 + 3");
+    LHOLO_CHECK(formatShulkerBoxCount(27, 1, "盒", "组") == "1盒");
 }
 
 void testSettingsStore() {
