@@ -30,9 +30,8 @@ struct MaterialRequirement {
     // countable inventory form (for example projected water/lava cells).
     std::string   itemId;
     std::uint64_t count{};
-    // Max stack size of the item this block resolves to (64 normally, 16 for
-    // signs etc., 1 for filled buckets). Used for the JE-style "N (a x S + b)"
-    // count display. Computed on the tick thread; 64 when unknown.
+    // Max stack size read from the resolved game item. Used for material-count
+    // conversions; 64 is retained only as a fallback when the item is unknown.
     int           stackSize{64};
 };
 

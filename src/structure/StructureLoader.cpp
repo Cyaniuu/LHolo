@@ -680,7 +680,6 @@ void renderMaterialHud() {
                 shulkerBoxConversion
                     ? lholo::structure::formatShulkerBoxCount(
                         miss,
-                        materials[index].stackSize,
                         i18n::tr(i18n::TextKey::HudShulkerBoxUnit),
                         i18n::tr(i18n::TextKey::HudStackUnit)
                     )

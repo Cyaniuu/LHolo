@@ -802,6 +802,9 @@ void renderHudPage(MenuModel& model, UiMetrics const& metrics) {
             model.materialHudShulkerBoxConversion,
             metrics
         );
+        ImGui::TextDisabled(
+            "%s", i18n::tr(i18n::TextKey::HintMaterialHudShulkerBoxConversion)
+        );
         renderValueRow(i18n::tr(i18n::TextKey::LabelMaterialHudPosition), metrics, [&] {
             ImGui::SetNextItemWidth(adaptiveComboWidth(positions, 4));
             ImGui::Combo("##MaterialHudPosition", &model.materialHudPosition, positions, 4);

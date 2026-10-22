@@ -11,11 +11,10 @@ namespace lholo::structure {
 
 inline std::string formatShulkerBoxCount(
     std::uint64_t count,
-    int stackSize,
     std::string_view boxUnit,
     std::string_view stackUnit
 ) {
-    auto const stack = static_cast<std::uint64_t>(stackSize > 0 ? stackSize : 64);
+    constexpr std::uint64_t stack = 64;
     auto const boxSize = stack * 27;
     auto const boxes = count / boxSize;
     auto const remainder = count % boxSize;
