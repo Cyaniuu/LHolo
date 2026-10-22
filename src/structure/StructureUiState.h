@@ -148,6 +148,8 @@ public:
     void setExperimentalConsentGiven(bool given);
     [[nodiscard]] bool materialHudEnabled() const;
     void setMaterialHudEnabled(bool enabled);
+    [[nodiscard]] bool materialHudShulkerBoxConversion() const;
+    void setMaterialHudShulkerBoxConversion(bool enabled);
     [[nodiscard]] int materialHudPosition() const;
     void setMaterialHudPosition(int position);
     // Hints are stored as key plus arguments so a pending hint follows a
@@ -224,6 +226,7 @@ private:
 
     std::atomic_bool mExperimentalConsent{false};
     std::atomic_bool mMaterialHudEnabled{false};
+    std::atomic_bool mMaterialHudShulkerBoxConversion{false};
     std::atomic_int  mMaterialHudPosition{3};
     mutable std::mutex mActionHintMutex;
     i18n::Message      mActionHintMessage;

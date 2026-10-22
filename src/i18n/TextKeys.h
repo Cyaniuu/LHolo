@@ -124,7 +124,10 @@
     LHOLO_TEXT_KEY("checkbox.hudWrongType", CheckboxHudWrongType, "")                                    \
     LHOLO_TEXT_KEY("checkbox.hudExtraBlocks", CheckboxHudExtraBlocks, "")                                \
     LHOLO_TEXT_KEY("checkbox.materialHudEnabled", CheckboxMaterialHudEnabled, "")                        \
+    LHOLO_TEXT_KEY("checkbox.materialHudShulkerBoxConversion", CheckboxMaterialHudShulkerBoxConversion, "") \
     LHOLO_TEXT_KEY("label.materialHudPosition", LabelMaterialHudPosition, "")                            \
+    LHOLO_TEXT_KEY("hud.shulkerBoxUnit", HudShulkerBoxUnit, "")                                          \
+    LHOLO_TEXT_KEY("hud.stackUnit", HudStackUnit, "")                                                    \
                                                                                                          \
     /* Hotkeys page */                                                                                   \
     LHOLO_TEXT_KEY("section.hotkeys", SectionHotkeys, "")                                                \

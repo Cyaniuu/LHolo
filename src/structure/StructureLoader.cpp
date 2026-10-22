@@ -19,6 +19,7 @@
 #include "i18n/Message.h"
 #include "input/ViewMoveBasis.h"
 #include "settings/SettingsStore.h"
+#include "structure/MaterialCountFormat.h"
 #include "structure/MaterialTracker.h"
 #include "structure/formats/StructureFormatLoaders.h"
 #include "structure/StructureSession.h"
@@ -653,6 +654,7 @@ void renderMaterialHud() {
     auto const snapshot = uiState().materialHudSnapshot();
     auto const& materials = snapshot.requirements;
     auto const& available = snapshot.available;
+    auto const shulkerBoxConversion = uiState().materialHudShulkerBoxConversion();
 
     struct Row {
         char const*   name;
@@ -675,7 +677,14 @@ void renderMaterialHud() {
                 miss,
                 materials[index].stackSize,
                 std::to_string(miss),
-                lholo::ui::formatStackBreakdown(miss, materials[index].stackSize)
+                shulkerBoxConversion
+                    ? lholo::structure::formatShulkerBoxCount(
+                        miss,
+                        materials[index].stackSize,
+                        i18n::tr(i18n::TextKey::HudShulkerBoxUnit),
+                        i18n::tr(i18n::TextKey::HudStackUnit)
+                    )
+                    : lholo::ui::formatStackBreakdown(miss, materials[index].stackSize),
             });
         }
     }
@@ -830,6 +839,9 @@ void loadSettings() {
         projection::setMissingSeeThrough(settings.missingSeeThrough);
         setExperimentalConsentGiven(settings.experimentalConsent);
         setMaterialHudEnabled(settings.materialHudEnabled);
+        uiState().setMaterialHudShulkerBoxConversion(
+            settings.materialHudShulkerBoxConversion
+        );
         setMaterialHudPosition(settings.materialHudPosition);
         // Transform and layer state are session-local. Only the explicit
         // "restore last projection" record below is persisted.
@@ -934,6 +946,8 @@ void saveSettings() {
         settings.missingSeeThrough = projection::getMissingSeeThrough();
         settings.experimentalConsent = experimentalConsentGiven();
         settings.materialHudEnabled = materialHudEnabled();
+        settings.materialHudShulkerBoxConversion
+            = uiState().materialHudShulkerBoxConversion();
         settings.materialHudPosition = materialHudPosition();
         settings.placementRadius = place::getPlacementRadius();
         settings.autoPlacementBreakCooldownSeconds
